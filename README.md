@@ -119,7 +119,7 @@ uv run make-answers --camvid <CamVid資料夾> --out <答案.json>
 | 老師密碼 | Fly secrets `ROAD_TEST_TEACHER_PASSWORD` |
 | GitHub Actions 部署用的 token | repo secret `FLY_API_TOKEN`（`flyctl tokens create deploy -a road-test`） |
 
-機器：平常 1 台 `performance-4x`（4 個專用 CPU），2 個 worker × 2 個執行緒。沒人連線、也沒有路考在跑，10 分鐘後網站自己結束、機器停下來（按秒計費，停著只收 volume 和映像的儲存費）；有人連進來時 Fly 自動開機，約幾秒。Fly 自己的 auto_stop 是關掉的：它只看連線，學生關掉結果頁時背景還在補幀也會被關掉。
+機器：平常 1 台 `performance-4x`（4 個專用 CPU），2 個 worker × 2 個執行緒。沒人連線、也沒有路考在跑（Fly 的健康檢查打 `/healthz`，不算有人連線），10 分鐘後網站自己結束、機器停下來（按秒計費，停著只收 volume 和映像的儲存費）；有人連進來時 Fly 自動開機，約幾秒。Fly 自己的 auto_stop 是關掉的：它只看連線，學生關掉結果頁時背景還在補幀也會被關掉。
 
 ### 常用指令
 

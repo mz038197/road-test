@@ -49,9 +49,11 @@ def main(argv: list[str] | None = None) -> None:
     print(f"路考網站：{config.workers} 個 worker × {config.threads} 個執行緒；"
           + (f"閒置 {config.idle_minutes:g} 分鐘自動結束" if config.idle_minutes else "不會自動結束"), flush=True)
     app = build_app(config)
+    # 一律包起來（/healthz 由它回應）；有設定閒置時間才會真的自己結束
+    guard = IdleExit(app, busy=app.state.store.busy, minutes=config.idle_minutes or 0)
     if config.idle_minutes:
-        app = IdleExit(app, busy=app.state.store.busy, minutes=config.idle_minutes)
-        app.watch()
+        guard.watch()
+    app = guard
     uvicorn.run(app, host=args.host, port=args.port)
 
 

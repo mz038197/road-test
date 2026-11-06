@@ -26,7 +26,7 @@ primary_region = "nrt"   # 東京，離台灣近
     grace_period = "20s"
     interval = "30s"
     method = "GET"
-    path = "/api/groups"
+    path = "/healthz"   # 由 idle.py 回應，不算有人在用（不然機器永遠不會閒置）
     timeout = "5s"
 
 # 網站閒置自己結束是正常結束（exit 0），不要重開；當掉（非 0）才重開

@@ -45,3 +45,14 @@ def test_site_stays_up_while_a_road_test_is_running(client: TestClient) -> None:
     assert not guard.idle(), "還有路考在排隊或補幀，就算沒人連線也不能關"
     run_queue(client)
     assert guard.idle(), "路考跑完、也沒人連線：可以關機"
+
+
+def test_fly_health_checks_do_not_keep_the_machine_awake(client: TestClient) -> None:
+    clock = Clock()
+    guard, web = wrap(client, clock)
+
+    for _ in range(20):  # Fly 每 30 秒檢查一次
+        clock.now += 30
+        r = web.get("/healthz")
+        assert r.status_code == 200, "健康檢查要回 200"
+    assert guard.idle(), "只有 Fly 的健康檢查、沒有人連線：10 分鐘後還是要關機"

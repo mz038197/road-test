@@ -11,6 +11,8 @@ import threading
 import time
 from collections.abc import Callable
 
+HEALTH = "/healthz"  # fly.toml 的健康檢查路徑
+
 
 class IdleExit:
     def __init__(self, app, busy: Callable[[], bool], minutes: float, clock: Callable[[], float] = time.monotonic):
@@ -24,6 +26,10 @@ class IdleExit:
     async def __call__(self, scope, receive, send):
         if scope["type"] not in ("http", "websocket"):
             return await self.app(scope, receive, send)
+        if scope["path"] == HEALTH:  # Fly 每 30 秒的健康檢查不算有人在用
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [(b"content-type", b"text/plain; charset=utf-8")]})
+            return await send({"type": "http.response.body", "body": b"ok"})
         self.open += 1
         self.last = self.clock()
         try:
