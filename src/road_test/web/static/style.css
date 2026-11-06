@@ -51,6 +51,10 @@ ol.log .p { margin-left: auto; color: var(--bad); font-weight: 600; }
 body.wide main { max-width: 1320px; }
 #score-card { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 #score-card .score { font-size: 1.8rem; }
+.conf-slider { flex-basis: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.conf-slider label { font-weight: 600; min-width: 6.5em; font-variant-numeric: tabular-nums; }
+.conf-slider input[type=range] { flex: 1 1 240px; max-width: 480px; }
+.conf-slider p { flex-basis: 100%; margin: 0; }
 .player { display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: auto auto; gap: 12px;
           margin: 16px 0; outline: none; }
 .player:fullscreen { background: #000; padding: 12px; grid-template-rows: minmax(0, 1fr) auto; color: #e6e9ee;

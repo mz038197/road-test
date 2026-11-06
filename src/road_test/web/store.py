@@ -228,11 +228,12 @@ class Store:
         with self._db() as db:
             return {r[0] for r in db.execute("SELECT frame FROM detections WHERE submission_id = ?", (sid,))}
 
-    def detections(self, sid: int) -> dict[int, list]:
-        """{影片幀號: [[x1, y1, x2, y2, conf, 類別編號], ...]}，只有偵測過的幀。"""
+    def detections(self, sid: int, frames: list[int] | None = None) -> dict[int, list]:
+        """{影片幀號: [[x1, y1, x2, y2, conf, 類別編號], ...]}，只有偵測過的幀。frames：只要這些幀（例如計分幀）。"""
+        wanted = None if frames is None else set(frames)
         with self._db() as db:
-            return {r[0]: json.loads(r[1]) for r in
-                    db.execute("SELECT frame, boxes FROM detections WHERE submission_id = ?", (sid,))}
+            rows = db.execute("SELECT frame, boxes FROM detections WHERE submission_id = ?", (sid,))
+            return {r[0]: json.loads(r[1]) for r in rows if wanted is None or r[0] in wanted}
 
     def scored(self, sid: int, result: dict) -> None:
         with self._db() as db:
