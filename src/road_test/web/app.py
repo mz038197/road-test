@@ -2,7 +2,10 @@
 
 啟動：`uv run road-test-site`（見 main.py），資料夾由 ROAD_TEST_DATA 指定。
 """
+import hashlib
+import hmac
 import json
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -10,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from road_test.detector import CLASSES, Detector, ModelRejected
@@ -52,6 +56,14 @@ def check_classes(names) -> None:
                             "類別名稱要是 car、pedestrian、bicyclist、sign（大小寫要一樣），請回 Roboflow 改好後重新訓練。")
 
 
+def _video_key(data_dir: Path) -> bytes:
+    """影片網址簽章用的金鑰，放在路考資料夾（video.key），第一次啟動時產生，重開機後舊網址照樣能用。"""
+    path = data_dir / "video.key"
+    if not path.exists():
+        path.write_text(secrets.token_hex(32), encoding="utf-8")
+    return bytes.fromhex(path.read_text(encoding="utf-8").strip())
+
+
 def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_tests: dict[str, RoadTest],
                workers: int = 2, fill_chunk: int = 500) -> FastAPI:
     """data_dir：路考資料夾；load_detector：讀模型檔的函式（讀不進來要丟 ModelRejected）；
@@ -70,6 +82,16 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     app = FastAPI(title="路考網站", lifespan=lifespan)
     app.state.store = store
     app.state.worker = worker
+
+    video_key = _video_key(data_dir)
+
+    def video_signature(row) -> str:
+        """影片網址的簽章：綁定這次路考（編號＋上傳時間），清空後編號重用也不會對到舊網址。"""
+        message = f"{row['id']}:{row['sequence']}:{row['uploaded_at']}".encode()
+        return hmac.new(video_key, message, hashlib.sha256).hexdigest()[:32]
+
+    def video_url(row) -> str:
+        return f"/api/submissions/{row['id']}/video?t={video_signature(row)}"
 
     def group_codes() -> dict[str, str]:
         """組別代碼：先讀路考資料夾的 groups.json（{"01": "代碼", ...}），#10 改成管理頁產生。每次都重讀，改了不用重開。"""
@@ -141,7 +163,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def submission(sid: int, who: Viewer = Depends(viewer)):
         """排隊與進度；有成績之後 result 是計分結果（見 results.score_result）。"""
         row = visible(sid, who)
-        return {**summary(row), "position": store.position(sid),
+        return {**summary(row), "position": store.position(sid), "video_url": video_url(row),
                 "progress": {"done": row["frames_done"], "total": row["frames_total"]},
                 "result": json.loads(row["result"]) if row["result"] else None}
 
@@ -157,6 +179,21 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             "scoring_frames": [f["frame"] for f in answers["frames"]],
             "frames": [stored.get(n) for n in range(row["frames_total"])],
         }
+
+    @app.get("/api/submissions/{sid}/video")
+    def video(sid: int, t: str = ""):
+        """這次路考的影片，給結果頁的 <video> 播放（支援 Range，拖時間軸才順）。
+
+        <video> 不能帶 X-Group 標頭，所以權限放在網址的簽章 t 裡：看得到這次結果的人（自己這組、老師）
+        才拿得到 video_url。簽章不對一律 403，不透露有沒有這次路考。
+        """
+        row = store.get(sid)
+        if row is None or not hmac.compare_digest(t, video_signature(row)):
+            raise HTTPException(403, "影片網址不對或已經失效，請回結果頁重新整理。")
+        path = worker.video(row["sequence"])
+        if not path.is_file():
+            raise HTTPException(404, "找不到路考影片，請通知老師。")
+        return FileResponse(path, media_type="video/mp4")
 
     @app.get("/api/groups/{group}/records")
     def records(group: str, who: Viewer = Depends(viewer)):
