@@ -18,6 +18,10 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --locked
       - run: uv run pytest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test "tests/js/*.test.js"
 
   deploy:
     needs: test
