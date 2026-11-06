@@ -133,7 +133,7 @@ def test_a_model_that_fails_while_detecting_does_not_block_the_queue(client) -> 
 
 
 def test_the_site_serves_its_pages_without_a_build_step(client) -> None:
-    for page in ("/", "/result.html", "/common.js"):
+    for page in ("/", "/result.html", "/teacher.html", "/common.js"):
         response = client.get(page)
         assert response.status_code == 200, f"{page} 要由後端直接提供"
     assert "text/html" in client.get("/").headers["content-type"]

@@ -4,6 +4,7 @@
   ROAD_TEST_DATA     路考資料夾（必填，見 README）
   ROAD_TEST_WORKERS  幾個 worker（預設 2）
   ROAD_TEST_THREADS  每個 worker 推論用幾個執行緒（預設 CPU 核心數 ÷ worker 數）
+  ROAD_TEST_TEACHER_PASSWORD  老師密碼（沒設定時老師的 API 一律拒絕）
 """
 import argparse
 import os
@@ -15,9 +16,10 @@ import uvicorn
 from road_test import paths
 from road_test.detector import OnnxDetector
 from road_test.web.app import RoadTest, create_app
+from road_test.web.teacher import password_from_env
 
-# 目前只開放模擬路考；正式路考（Seq05VD）在 #9 加上
-SEQUENCES = {"mock": "0006R0"}
+# 正式路考平常關著，老師開放時才收件（見 app 的 /api/teacher/final）
+SEQUENCES = {"mock": "0006R0", "final": "Seq05VD"}
 
 
 def frame_count(video) -> int:
@@ -34,7 +36,8 @@ def build_app():
     threads = int(os.environ.get("ROAD_TEST_THREADS") or max(1, (os.cpu_count() or 1) // max(workers, 1)))
     road_tests = {kind: RoadTest(kind, seq, frame_count(paths.videos_dir() / f"{seq}.mp4"))
                   for kind, seq in SEQUENCES.items()}
-    return create_app(paths.data_dir(), partial(OnnxDetector, threads=threads), road_tests, workers=workers)
+    return create_app(paths.data_dir(), partial(OnnxDetector, threads=threads), road_tests, workers=workers,
+                      teacher_password=password_from_env())
 
 
 def main(argv: list[str] | None = None) -> None:

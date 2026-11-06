@@ -23,7 +23,7 @@ async function poll() {
   showStatus(s);
 
   if (s.result) {
-    showScore(s.result);
+    showScore(s.result, s);
     if (!player) {
       player = createPlayer(document.getElementById("player"),
         { videoUrl: s.video_url, detections: await source.detections(), result: s.result });
@@ -53,11 +53,12 @@ function showStatus(s) {
       (s.status === "filling" ? "（還沒偵測到的幀先不畫框，計分幀的判定都已經有了）" : "");
 }
 
-function showScore(r) {
+function showScore(r, s) {
   document.getElementById("score-card").hidden = false;
   document.getElementById("score").textContent = `${r.score} 分`;
   document.getElementById("score-detail").textContent =
-    `已扣 ${+r.deducted.toFixed(1)} 分，扣滿 ${r.full} 分，考官紀錄 ${r.log.length} 條（CONF ${r.conf}）`;
+    `已扣 ${+r.deducted.toFixed(1)} 分，扣滿 ${r.full} 分，考官紀錄 ${r.log.length} 條` +
+    `（CONF ${r.conf}${s.conf_locked ? "，正式路考交件時鎖定" : ""}）`;
 }
 
 if (id) poll(); else document.getElementById("error").textContent = "網址少了路考編號。";

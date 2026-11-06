@@ -15,9 +15,11 @@ from typing import Callable
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from road_test.detector import CLASSES, Detector, ModelRejected
-from road_test.web.store import Store
+from road_test.web.store import Busy, NoFinalLeft, Store
+from road_test.web.teacher import teacher_check
 from road_test.web.worker import Worker
 
 STATIC = Path(__file__).parent / "static"
@@ -65,9 +67,10 @@ def _video_key(data_dir: Path) -> bytes:
 
 
 def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_tests: dict[str, RoadTest],
-               workers: int = 2, fill_chunk: int = 500) -> FastAPI:
+               workers: int = 2, fill_chunk: int = 500, teacher_password: str | None = None) -> FastAPI:
     """data_dir：路考資料夾；load_detector：讀模型檔的函式（讀不進來要丟 ModelRejected）；
-    road_tests：{"mock": RoadTest, "final": RoadTest}；workers：背景 worker 數，0 就不開（測試自己跑 run_until_idle）。
+    road_tests：{"mock": RoadTest, "final": RoadTest}；workers：背景 worker 數，0 就不開（測試自己跑 run_until_idle）；
+    teacher_password：老師密碼（main 從 ROAD_TEST_TEACHER_PASSWORD 讀），None 就是老師的 API 一律拒絕。
     """
     data_dir = Path(data_dir)
     store = Store(data_dir)
@@ -82,6 +85,15 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     app = FastAPI(title="路考網站", lifespan=lifespan)
     app.state.store = store
     app.state.worker = worker
+    teacher = teacher_check(teacher_password)
+
+    def final_open() -> bool:
+        return bool(store.setting("final_open", False))
+
+    def road_test_state() -> dict:
+        is_open = final_open()
+        return {"final_open": is_open, "kinds": [
+            {"kind": k, "name": KIND_NAMES[k], "open": (k == "final") == is_open} for k in road_tests]}
 
     video_key = _video_key(data_dir)
 
@@ -115,7 +127,8 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         result = json.loads(row["result"]) if row["result"] else None
         return {
             "id": row["id"], "group": row["grp"], "kind": row["kind"], "kind_name": KIND_NAMES[row["kind"]],
-            "sequence": row["sequence"], "conf": row["conf"], "filename": row["filename"],
+            "sequence": row["sequence"], "conf": row["conf"], "conf_locked": row["kind"] == "final",
+            "filename": row["filename"],
             "status": row["status"], "score": result["score"] if result else None, "error": row["error"],
             "uploaded_at": row["uploaded_at"], "started_at": row["started_at"],
             "scored_at": row["scored_at"], "done_at": row["done_at"],
@@ -126,16 +139,46 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         """交件頁的組別選單（不含代碼）。"""
         return sorted(group_codes())
 
+    @app.get("/api/road-tests")
+    def road_test_status():
+        """哪一種路考現在收件：正式路考開放時只收正式路考，關著時只收模擬路考。"""
+        return road_test_state()
+
+    class FinalSwitch(BaseModel):
+        open: bool
+
+    @app.get("/api/teacher/final", dependencies=[Depends(teacher)])
+    def final_state():
+        return road_test_state()
+
+    @app.put("/api/teacher/final", dependencies=[Depends(teacher)])
+    def switch_final(body: FinalSwitch):
+        """老師開關正式路考。關閉前已經收下的正式路考照樣跑完。"""
+        store.set_setting("final_open", body.open)
+        return road_test_state()
+
     @app.post("/api/submissions", status_code=201)
     def submit(group: str = Form(), code: str = Form(), kind: str = Form("mock"),
-               conf: float = Form(0.35), model: UploadFile = File()):
+               conf: float = Form(0.35), confirm: bool = Form(False), model: UploadFile = File()):
+        """交件。正式路考要 confirm=true（學生確認了「交了就不能重交」），交出的 CONF 就鎖定。"""
         check_code(group, code)
         if kind not in road_tests:
             raise HTTPException(400, f"{KIND_NAMES.get(kind, kind)}目前沒有開放。")
+        # 以收到交件的時間為準：開關在這一刻是什麼就照什麼，收下之後老師再關也照樣跑完
+        if kind == "final" and not final_open():
+            raise HTTPException(400, "正式路考目前沒有開放，要等老師在課堂上開放才能交。")
+        if kind == "mock" and final_open():
+            raise HTTPException(400, "正式路考開放期間，模擬路考暫停收件，等老師關閉正式路考後再交。")
         if not 0.05 <= conf <= 1:
             raise HTTPException(400, "CONF 要在 0.05 到 1 之間。")
-        if store.active(group):
-            raise HTTPException(409, "你們這組已經有一件路考在跑，等它跑完再交。")
+        if kind == "final" and not confirm:
+            raise HTTPException(400, "正式路考交了就不能重交，請先勾選確認。")
+        busy = HTTPException(409, "你們這組已經有一件路考在跑，等它跑完再交。")
+        no_final = HTTPException(409, "正式路考每組只能交一次，你們這組已經交過了。要重交請找老師。")
+        if kind == "final" and store.finals_left(group) <= 0:
+            raise no_final
+        if kind == "mock" and store.active(group):
+            raise busy
         upload = store.models_dir / f"upload-{uuid.uuid4().hex}.tmp"
         with upload.open("wb") as f:
             while chunk := model.file.read(1 << 20):
@@ -149,13 +192,16 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
                 raise ModelRejected("模型讀不進來，請確認上傳的是訓練程式匯出的 .onnx 檔。") from e
             check_classes(detector.names)
             rt = road_tests[kind]
-            sid = store.add(group, kind, rt.sequence, conf, model.filename or "", upload, rt.frame_count)
+            sid = store.add(group, kind, rt.sequence, conf, model.filename or "", upload, rt.frame_count,
+                            priority=1 if kind == "final" else 0)  # 正式路考插到模擬路考前面
         except ModelRejected as e:
             raise HTTPException(422, str(e)) from e
+        except Busy:
+            raise busy from None
+        except NoFinalLeft:
+            raise no_final from None
         finally:
             upload.unlink(missing_ok=True)
-        if sid is None:
-            raise HTTPException(409, "你們這組已經有一件路考在跑，等它跑完再交。")
         worker.wake()
         return {"id": sid, "status": "queued", "position": store.position(sid)}
 
