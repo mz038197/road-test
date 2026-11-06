@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import secrets
+import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from road_test.web.worker import Worker
 STATIC = Path(__file__).parent / "static"
 KIND_NAMES = {"mock": "模擬路考", "final": "正式路考"}
 TRAINING_VIDEO = "0016E5"  # 訓練影片，在路考資料夾的 videos/ 裡；不會出現在路考裡
+VIDEO_URL_HOURS = 6  # 路考影片網址幾小時後失效（結果頁每次拿成績都會拿到新的網址）
 
 
 @dataclass(frozen=True)
@@ -72,11 +74,11 @@ def _video_key(data_dir: Path) -> bytes:
 
 def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_tests: dict[str, RoadTest],
                workers: int = 2, fill_chunk: int = 500, teacher_password: str | None = None,
-               student_dir: Path | None = None) -> FastAPI:
+               student_dir: Path | None = None, clock: Callable[[], float] = time.time) -> FastAPI:
     """data_dir：路考資料夾；load_detector：讀模型檔的函式（讀不進來要丟 ModelRejected）；
     road_tests：{"mock": RoadTest, "final": RoadTest}；workers：背景 worker 數，0 就不開（測試自己跑 run_until_idle）；
     teacher_password：老師密碼（main 從 ROAD_TEST_TEACHER_PASSWORD 讀），None 就是老師的 API 一律拒絕；
-    student_dir：發給學生的訓練程式（預設 paths.student_dir()）。
+    student_dir：發給學生的訓練程式（預設 paths.student_dir()）；clock：現在幾秒（測試換成假時鐘）。
     """
     data_dir = Path(data_dir)
     student_dir = Path(student_dir) if student_dir else paths.student_dir()
@@ -104,13 +106,15 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
 
     video_key = _video_key(data_dir)
 
-    def video_signature(row) -> str:
-        """影片網址的簽章：綁定這次路考（編號＋上傳時間），清空後編號重用也不會對到舊網址。"""
-        message = f"{row['id']}:{row['sequence']}:{row['uploaded_at']}".encode()
+    def video_signature(row, expires: int) -> str:
+        """影片網址的簽章：綁定這次路考（編號＋上傳時間）和到期時間，清空後編號重用也不會對到舊網址，
+        改網址上的到期時間簽章就對不上。"""
+        message = f"{row['id']}:{row['sequence']}:{row['uploaded_at']}:{expires}".encode()
         return hmac.new(video_key, message, hashlib.sha256).hexdigest()[:32]
 
     def video_url(row) -> str:
-        return f"/api/submissions/{row['id']}/video?t={video_signature(row)}"
+        expires = int(clock()) + VIDEO_URL_HOURS * 3600
+        return f"/api/submissions/{row['id']}/video?e={expires}&t={video_signature(row, expires)}"
 
     codes = GroupCodes(data_dir / "groups.json")  # 組別代碼，管理頁產生、重設（見 groups.py）
 
@@ -253,14 +257,14 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         }
 
     @app.get("/api/submissions/{sid}/video")
-    def video(sid: int, t: str = ""):
+    def video(sid: int, t: str = "", e: int = 0):
         """這次路考的影片，給結果頁的 <video> 播放（支援 Range，拖時間軸才順）。
 
         <video> 不能帶 X-Group 標頭，所以權限放在網址的簽章 t 裡：看得到這次結果的人（自己這組、老師）
-        才拿得到 video_url。簽章不對一律 403，不透露有沒有這次路考。
+        才拿得到 video_url。網址 6 小時後失效（e 是到期時間）；簽章不對、過期一律 403，不透露有沒有這次路考。
         """
         row = store.get(sid)
-        if row is None or not hmac.compare_digest(t, video_signature(row)):
+        if row is None or e < clock() or not hmac.compare_digest(t, video_signature(row, e)):
             raise HTTPException(403, "影片網址不對或已經失效，請回結果頁重新整理。")
         path = worker.video(row["sequence"])
         if not path.is_file():

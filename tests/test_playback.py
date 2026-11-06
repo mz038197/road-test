@@ -62,3 +62,38 @@ def test_the_detections_and_the_result_line_up_on_video_frames(client) -> None:
     assert detections["frames"][3] == [[100, 100, 140, 200, 0.6, 1]], "第 3 幀（非計分幀）的框也要有"
     assert detections["frames"][4] == [], "沒框到的幀是空陣列"
     assert result["log"][0]["video_frame"] == 5, "考官紀錄記在結算的影片幀"
+
+
+class Clock:
+    """假時鐘：測試自己往前撥。"""
+
+    def __init__(self, now: float = 1_000_000.0):
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_a_video_url_expires_after_six_hours_and_a_fresh_one_works(open_site, video) -> None:
+    clock = Clock()
+    client = open_site(clock=clock)
+    sid = submit(client).json()["id"]
+    url = video_url(client, sid)
+
+    clock.now += 6 * 3600 - 1
+    assert client.get(url).status_code == 200, "6 小時內影片網址都能用"
+    clock.now += 2
+    assert client.get(url).status_code == 403, "超過 6 小時的影片網址要失效"
+    assert client.get(video_url(client, sid)).status_code == 200, "重新拿結果就有新的網址可以看"
+
+
+def test_the_expiry_time_cannot_be_extended_by_editing_the_url(open_site, video) -> None:
+    clock = Clock()
+    client = open_site(clock=clock)
+    sid = submit(client).json()["id"]
+    url = video_url(client, sid)
+    expires = int(url.split("e=")[1].split("&")[0])
+
+    clock.now += 7 * 3600
+    stretched = url.replace(f"e={expires}", f"e={expires + 86400}")
+    assert client.get(stretched).status_code == 403, "自己改網址上的到期時間不能延長"
