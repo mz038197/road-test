@@ -1,4 +1,4 @@
-// 交件頁：交模擬路考或正式路考、看自己這組的路考紀錄（正式、模擬分開列）
+// 交件頁（submit.html）：交模擬路考或正式路考、看自己這組的路考紀錄（正式、模擬分開列）
 const form = document.getElementById("submit");
 const groupSelect = document.getElementById("group");
 const codeInput = document.getElementById("code");

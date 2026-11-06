@@ -24,6 +24,15 @@ def videos_dir() -> Path:
     return data_dir() / "videos"
 
 
+def student_dir() -> Path:
+    """發給學生的訓練程式（train_yolo.py、train_yolo_colab.ipynb），委託頁從這裡提供下載。
+
+    平常是 repo 的 student/；Docker 映像裡套件裝在 .venv，找不到 repo，所以用 ROAD_TEST_STUDENT 指過去。
+    """
+    value = os.environ.get("ROAD_TEST_STUDENT")
+    return Path(value) if value else Path(__file__).resolve().parents[2] / "student"
+
+
 def camvid_dir() -> Path:
     """CamVid（SegNet 版 480×360）資料夾，只有老師產生答案時用得到。"""
     return _from_env("CAMVID_DIR", "CamVid 資料夾")

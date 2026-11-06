@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from road_test import paths
 from road_test.detector import CLASSES, Detector, ModelRejected
 from road_test.web.groups import GroupCodes
 from road_test.web.results import score_result
@@ -26,6 +27,7 @@ from road_test.web.worker import Worker
 
 STATIC = Path(__file__).parent / "static"
 KIND_NAMES = {"mock": "模擬路考", "final": "正式路考"}
+TRAINING_VIDEO = "0016E5"  # 訓練影片，在路考資料夾的 videos/ 裡；不會出現在路考裡
 
 
 @dataclass(frozen=True)
@@ -69,12 +71,15 @@ def _video_key(data_dir: Path) -> bytes:
 
 
 def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_tests: dict[str, RoadTest],
-               workers: int = 2, fill_chunk: int = 500, teacher_password: str | None = None) -> FastAPI:
+               workers: int = 2, fill_chunk: int = 500, teacher_password: str | None = None,
+               student_dir: Path | None = None) -> FastAPI:
     """data_dir：路考資料夾；load_detector：讀模型檔的函式（讀不進來要丟 ModelRejected）；
     road_tests：{"mock": RoadTest, "final": RoadTest}；workers：背景 worker 數，0 就不開（測試自己跑 run_until_idle）；
-    teacher_password：老師密碼（main 從 ROAD_TEST_TEACHER_PASSWORD 讀），None 就是老師的 API 一律拒絕。
+    teacher_password：老師密碼（main 從 ROAD_TEST_TEACHER_PASSWORD 讀），None 就是老師的 API 一律拒絕；
+    student_dir：發給學生的訓練程式（預設 paths.student_dir()）。
     """
     data_dir = Path(data_dir)
+    student_dir = Path(student_dir) if student_dir else paths.student_dir()
     store = Store(data_dir)
     worker = Worker(store, load_detector, data_dir, fill_chunk=fill_chunk)
 
@@ -261,6 +266,23 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         if not path.is_file():
             raise HTTPException(404, "找不到路考影片，請通知老師。")
         return FileResponse(path, media_type="video/mp4")
+
+    # 委託頁（index.html）的下載：不需要組別代碼
+    @app.get(f"/downloads/{TRAINING_VIDEO}.mp4")
+    def training_video():
+        """訓練影片：學生自己挑幀標註。支援 Range，下載中斷可以接著下。"""
+        path = data_dir / "videos" / f"{TRAINING_VIDEO}.mp4"
+        if not path.is_file():
+            raise HTTPException(404, "找不到訓練影片，請通知老師。")
+        return FileResponse(path, media_type="video/mp4", filename=path.name)
+
+    @app.get("/downloads/train_yolo.py")
+    def training_program():
+        """本機訓練程式（Colab 版在 GitHub，委託頁用「在 Colab 開啟」連過去）。"""
+        path = student_dir / "train_yolo.py"
+        if not path.is_file():
+            raise HTTPException(404, "找不到訓練程式，請通知老師。")
+        return FileResponse(path, media_type="text/x-python; charset=utf-8", filename=path.name)
 
     @app.get("/api/groups/{group}/records")
     def records(group: str, who: Viewer = Depends(viewer)):

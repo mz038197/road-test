@@ -102,3 +102,15 @@ td.actions button + button { margin-left: 6px; }
 .confirm-box p { margin: 0 0 4px; }
 .confirm-box button { margin-top: 8px; }
 .notice { color: var(--good); font-weight: 600; }
+
+/* 委託頁（index.html） */
+.lead { font-size: 1.15rem; margin: 0 0 12px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+a.button { display: inline-block; padding: 9px 16px; border-radius: 6px; background: var(--accent); color: #fff;
+           text-decoration: none; border: 1px solid var(--accent); }
+a.button.secondary { background: transparent; color: var(--accent); }
+.brief ol.steps > li { margin-bottom: 12px; }
+.brief ul ul { margin: 4px 0; }
+.brief code { font-size: .95em; padding: 0 3px; border-radius: 3px; background: var(--bg); }
+table.classes { margin: 8px 0; }
+table.classes td, table.classes th { white-space: normal; }
