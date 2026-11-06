@@ -51,6 +51,9 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 
 `ROAD_TEST_WORKERS`：同時跑幾件（預設 2）；`ROAD_TEST_THREADS`：每個 worker 推論用幾個執行緒（預設 CPU 核心數 ÷ worker 數）。
 
+`ROAD_TEST_TEACHER_PASSWORD`：老師密碼（Fly 上放 secrets）。沒設定的話，開關正式路考等老師的功能一律拒絕。
+老師在 `/teacher.html` 輸入老師密碼開關正式路考；開放期間模擬路考暫停收件，排隊中的正式路考先跑。
+
 ## 資料夾
 
 答案、路考影片、交件、結果、組別代碼和老師密碼都不進 git（這是公開 repo）。資料放在 repo 外，用環境變數指過去：
@@ -70,7 +73,7 @@ $ROAD_TEST_DATA/
   answers/Seq05VD.json 正式路考的答案（171 個計分幀）
   answers/0006R0.json  模擬路考的答案（101 個計分幀）
   groups.json          組別代碼 {"01": "代碼", ...}（組別用英數字，會放在 HTTP 標頭裡）
-  road_test.db         網站產生：交件、排隊、偵測結果、成績（SQLite）
+  road_test.db         網站產生：交件、排隊、偵測結果、成績、正式路考開關（SQLite）
   submissions/         網站產生：交上來的模型，改名成 組別_路考種類_上傳時間_編號.onnx
 ```
 

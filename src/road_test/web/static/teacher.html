@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>正式路考開關</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <p><a href="index.html">← 回交件頁</a></p>
+  <h1>正式路考開關</h1>
+  <p class="muted">開放期間：模擬路考暫停收件，排隊中的正式路考先跑。關閉後不收正式路考，但關閉前已經收下的照樣跑完、有成績。</p>
+
+  <form id="login" class="card">
+    <label for="password">老師密碼</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button type="submit">確認</button>
+  </form>
+
+  <section class="card">
+    <h2>目前狀態</h2>
+    <p class="score" id="state">—</p>
+    <button type="button" id="open" disabled>開放正式路考</button>
+    <button type="button" id="close" class="secondary" disabled>關閉正式路考</button>
+    <p id="error" class="error" role="alert"></p>
+  </section>
+</main>
+<script src="common.js"></script>
+<script src="teacher.js"></script>
+</body>
+</html>
