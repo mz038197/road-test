@@ -82,6 +82,8 @@ class Worker:
             if self.store.get(sid)["frames_done"] >= row["frames_total"]:
                 self.store.finish(sid)
         except Exception as e:  # 一件出錯不能讓 worker 停掉
+            if self.store.get(sid) is None:  # 跑到一半被老師清空了
+                return
             log.exception("交件 %s 偵測計分幀時出錯", sid)
             self.store.fail(sid, f"偵測時出錯：{e}")
 
@@ -94,6 +96,8 @@ class Worker:
             if self.store.get(sid)["frames_done"] >= row["frames_total"]:
                 self.store.finish(sid)
         except Exception as e:
+            if self.store.get(sid) is None:  # 跑到一半被老師清空了
+                return
             log.exception("交件 %s 補幀時出錯", sid)
             self.store.fail(sid, f"補完其餘的幀時出錯：{e}")
 

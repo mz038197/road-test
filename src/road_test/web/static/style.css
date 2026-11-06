@@ -84,3 +84,17 @@ body.wide main { max-width: 1320px; }
   .player { grid-template-columns: 1fr; }
   .player:not(:fullscreen) .panel { max-height: 50vh; }
 }
+
+/* 管理頁（teacher.html） */
+body.admin main { max-width: 1000px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.row button, .row label { margin: 0; }
+.row select { width: auto; }
+button.small { margin: 0; padding: 4px 10px; font-size: .9rem; }
+button.danger { background: var(--bad); color: #fff; }
+td.code { font: 600 1.35rem/1.2 ui-monospace, Consolas, monospace; letter-spacing: .06em; }
+td.actions { display: flex; gap: 6px; }
+.confirm-box { margin-top: 12px; padding: 12px 14px; border: 2px solid var(--warn); border-radius: 8px; }
+.confirm-box p { margin: 0 0 4px; }
+.confirm-box button { margin-top: 8px; }
+.notice { color: var(--good); font-weight: 600; }

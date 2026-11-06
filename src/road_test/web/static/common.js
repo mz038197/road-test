@@ -13,9 +13,24 @@ function saveGroup(group, code) {
   try { localStorage.setItem("road-test-group", JSON.stringify({ group, code })); } catch { /* 無痕視窗存不了，沒關係 */ }
 }
 
-// 呼叫 API 時帶的身分標頭：目前是記住的組別和組別代碼。
-// #10 老師登入後，讓這裡改回傳老師密碼的標頭，結果頁（result.html）不用改就能給老師播任一組。
+// 老師密碼：管理頁（teacher.html）登入後只存在這個分頁（sessionStorage），關掉分頁就要重打。
+// 管理頁在同一個分頁打開 result.html，結果頁就帶老師密碼，看得到任一組。
+const TEACHER_KEY = "road-test-teacher";
+
+function loadTeacher() {
+  try { return sessionStorage.getItem(TEACHER_KEY) || ""; } catch { return ""; }
+}
+
+function saveTeacher(password) {
+  try {
+    if (password) sessionStorage.setItem(TEACHER_KEY, password); else sessionStorage.removeItem(TEACHER_KEY);
+  } catch { /* 存不了就每次重打 */ }
+}
+
+// 呼叫 API 時帶的身分標頭：老師登入了就帶老師密碼，不然帶記住的組別和組別代碼。
 function authHeaders() {
+  const teacher = loadTeacher();
+  if (teacher) return { "X-Teacher-Password": teacher };
   const { group, code } = loadGroup();
   return group ? { "X-Group": group, "X-Group-Code": code || "" } : {};
 }
