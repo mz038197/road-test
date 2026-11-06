@@ -51,10 +51,10 @@ def main(argv: list[str] | None = None) -> None:
     app = build_app(config)
     # 一律包起來（/healthz 由它回應）；有設定閒置時間才會真的自己結束
     guard = IdleExit(app, busy=app.state.store.busy, minutes=config.idle_minutes or 0)
+    server = uvicorn.Server(uvicorn.Config(guard, host=args.host, port=args.port))
     if config.idle_minutes:
-        guard.watch()
-    app = guard
-    uvicorn.run(app, host=args.host, port=args.port)
+        guard.watch(on_idle=lambda: setattr(server, "should_exit", True))  # 正常結束，exit 0
+    server.run()
 
 
 if __name__ == "__main__":
