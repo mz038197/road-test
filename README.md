@@ -8,8 +8,7 @@
 src/road_test/      Python 套件，網站和老師工具都從這裡 import
   paths.py          資料夾（讀環境變數）
   answers.py        從 CamVid 標註圖產生路考答案（make-answers）
-scripts/            老師一次性的腳本
-  road_test.py      舊的計分＋cv2 播放；計分模組完成後刪掉
+  scoring.py        計分：score(answers, detections, conf) → 考官紀錄、每個計分幀的判定、成績
 student/            發給學生的訓練程式
   train_yolo.py           本機版
   train_yolo_colab.ipynb  Colab 版
@@ -23,7 +22,7 @@ uv sync
 uv run pytest
 ```
 
-學生訓練程式和舊的播放程式要用 ultralytics，裝起來很大，另外放在 `train` 群組：
+學生訓練程式要用 ultralytics，裝起來很大，另外放在 `train` 群組：
 
 ```powershell
 uv sync --group train
@@ -51,12 +50,4 @@ $env:ROAD_TEST_DATA = "D:\road-test-data"
 uv run make-answers                      # 正式路考 Seq05VD，存到 $env:ROAD_TEST_DATA\answers\Seq05VD.json
 uv run make-answers --sequence 0006R0    # 其他段街道
 uv run make-answers --camvid <CamVid資料夾> --out <答案.json>
-```
-
-## 舊的路考程式
-
-計分模組完成前，舊的計分＋播放程式暫時留在 `scripts/road_test.py`：
-
-```powershell
-uv run --group train python scripts/road_test.py $env:CAMVID_DIR $env:ROAD_TEST_DATA\answers\Seq05VD.json <上傳檔資料夾>
 ```
