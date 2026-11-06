@@ -94,6 +94,11 @@ class Store:
         with self._db() as db:
             return db.execute(f"SELECT * FROM submissions WHERE grp = ? AND status IN {ACTIVE}", (group,)).fetchone()
 
+    def busy(self) -> bool:
+        """還有路考在排隊、偵測或補幀（閒置自動關機要等這些跑完）。"""
+        with self._db() as db:
+            return db.execute(f"SELECT 1 FROM submissions WHERE status IN {ACTIVE} LIMIT 1").fetchone() is not None
+
     def add(self, group: str, kind: str, sequence: str, conf: float, filename: str, upload: Path,
             frames_total: int, priority: int = 0) -> int | None:
         """收件並排隊，模型檔改名成「組別_路考種類_上傳時間_編號.onnx」。這組已經有一件在跑就回傳 None。"""

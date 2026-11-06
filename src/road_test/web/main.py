@@ -1,9 +1,8 @@
 """在本機或 Fly 上啟動路考網站：`uv run road-test-site [--host 0.0.0.0] [--port 8000]`。
 
 環境變數：
-  ROAD_TEST_DATA     路考資料夾（必填，見 README）
-  ROAD_TEST_WORKERS  幾個 worker（預設 2）
-  ROAD_TEST_THREADS  每個 worker 推論用幾個執行緒（預設 CPU 核心數 ÷ worker 數）
+  ROAD_TEST_DATA          路考資料夾（必填，見 README）
+  ROAD_TEST_WORKERS、ROAD_TEST_THREADS、ROAD_TEST_IDLE_MINUTES  見 settings.py
 """
 import argparse
 import os
@@ -14,7 +13,9 @@ import uvicorn
 
 from road_test import paths
 from road_test.detector import OnnxDetector
+from road_test.web import settings
 from road_test.web.app import RoadTest, create_app
+from road_test.web.idle import IdleExit
 
 # 目前只開放模擬路考；正式路考（Seq05VD）在 #9 加上
 SEQUENCES = {"mock": "0006R0"}
@@ -29,12 +30,12 @@ def frame_count(video) -> int:
     return n
 
 
-def build_app():
-    workers = int(os.environ.get("ROAD_TEST_WORKERS", "2"))
-    threads = int(os.environ.get("ROAD_TEST_THREADS") or max(1, (os.cpu_count() or 1) // max(workers, 1)))
+def build_app(config: settings.Settings | None = None):
+    config = config or settings.from_env(os.environ, os.cpu_count())
     road_tests = {kind: RoadTest(kind, seq, frame_count(paths.videos_dir() / f"{seq}.mp4"))
                   for kind, seq in SEQUENCES.items()}
-    return create_app(paths.data_dir(), partial(OnnxDetector, threads=threads), road_tests, workers=workers)
+    return create_app(paths.data_dir(), partial(OnnxDetector, threads=config.threads), road_tests,
+                      workers=config.workers)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -42,7 +43,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
-    uvicorn.run(build_app(), host=args.host, port=args.port)
+    config = settings.from_env(os.environ, os.cpu_count())
+    print(f"路考網站：{config.workers} 個 worker × {config.threads} 個執行緒；"
+          + (f"閒置 {config.idle_minutes:g} 分鐘自動結束" if config.idle_minutes else "不會自動結束"), flush=True)
+    app = build_app(config)
+    if config.idle_minutes:
+        app = IdleExit(app, busy=app.state.store.busy, minutes=config.idle_minutes)
+        app.watch()
+    uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

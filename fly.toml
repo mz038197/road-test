@@ -1,0 +1,39 @@
+# 路考網站在 Fly.io 的設定。部署：push 到 main 由 GitHub Actions 跑 flyctl deploy（見 README「部署」）。
+app = "road-test"
+primary_region = "nrt"   # 東京，離台灣近
+
+[env]
+  ROAD_TEST_DATA = "/data"
+  ROAD_TEST_WORKERS = "2"
+  # 沒有人連線、也沒有路考在跑，10 分鐘後網站自己結束，機器就停下來（見 src/road_test/web/idle.py）
+  ROAD_TEST_IDLE_MINUTES = "10"
+  # ROAD_TEST_THREADS 不設：每個 worker 用「核心數 ÷ worker 數」，升級機器時自動跟著變多
+
+# 路考影片、答案、組別代碼、交件、成績（road_test.db）都在這個 volume，重新部署不會不見
+[mounts]
+  source = "road_test_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Fly 的 auto_stop 只看連線：學生關掉結果頁時背景還在補幀也會被關，所以關掉，改由網站閒置時自己結束。
+  auto_stop_machines = "off"
+  # 機器停著時有人連進來，Fly proxy 會把它開起來
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    path = "/api/groups"
+    timeout = "5s"
+
+# 網站閒置自己結束是正常結束（exit 0），不要重開；當掉（非 0）才重開
+[[restart]]
+  policy = "on-failure"
+  retries = 5
+
+[[vm]]
+  size = "performance-4x"   # 4 個專用 CPU、8 GB。正式路考那天升級，見 README「正式路考那天」
