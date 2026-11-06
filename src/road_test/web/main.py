@@ -2,7 +2,7 @@
 
 環境變數：
   ROAD_TEST_DATA          路考資料夾（必填，見 README）
-  ROAD_TEST_WORKERS、ROAD_TEST_THREADS、ROAD_TEST_IDLE_MINUTES  見 settings.py
+  ROAD_TEST_WORKERS、ROAD_TEST_THREADS、ROAD_TEST_IDLE_MINUTES、ROAD_TEST_MAX_UPLOAD_MB  見 settings.py
   ROAD_TEST_TEACHER_PASSWORD  老師密碼（沒設定時老師的 API 一律拒絕）
 """
 import argparse
@@ -37,7 +37,8 @@ def build_app(config: settings.Settings | None = None):
     road_tests = {kind: RoadTest(kind, seq, frame_count(paths.videos_dir() / f"{seq}.mp4"))
                   for kind, seq in SEQUENCES.items()}
     return create_app(paths.data_dir(), partial(OnnxDetector, threads=config.threads), road_tests,
-                      workers=config.workers, teacher_password=password_from_env())
+                      workers=config.workers, teacher_password=password_from_env(),
+                      max_upload_bytes=config.max_upload_bytes)
 
 
 def main(argv: list[str] | None = None) -> None:

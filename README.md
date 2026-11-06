@@ -54,7 +54,7 @@ uv run road-test-site                 # http://127.0.0.1:8000
 uv run road-test-site --host 0.0.0.0 --port 8080
 ```
 
-`ROAD_TEST_WORKERS`：同時跑幾段偵測（預設 CPU 核心數 ÷ 2）；`ROAD_TEST_THREADS`：每個 worker 推論用幾個執行緒（預設 CPU 核心數 ÷ worker 數）；`ROAD_TEST_IDLE_MINUTES`：沒人連線、也沒有路考在跑幾分鐘後網站自己結束（預設不結束，Fly 上是 10）。
+`ROAD_TEST_WORKERS`：同時跑幾段偵測（預設 CPU 核心數 ÷ 2）；`ROAD_TEST_THREADS`：每個 worker 推論用幾個執行緒（預設 CPU 核心數 ÷ worker 數）；`ROAD_TEST_IDLE_MINUTES`：沒人連線、也沒有路考在跑幾分鐘後網站自己結束（預設不結束，Fly 上是 10）；`ROAD_TEST_MAX_UPLOAD_MB`：模型檔大小上限（預設 100，超過回 413）。
 
 `ROAD_TEST_STUDENT`：學生訓練程式的資料夾（預設 repo 的 `student/`；Docker 映像裡是 `/app/student`）。
 

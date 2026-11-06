@@ -47,3 +47,8 @@ def test_bigger_machine_gets_more_workers_without_extra_settings() -> None:
     s = from_env({}, cpu_count=16)
 
     assert (s.workers, s.threads) == (8, 2), "正式路考那天升級成 16 核心：不用改設定就變成 8 個 worker × 2 個執行緒"
+
+
+def test_upload_limit_defaults_to_100_mb_and_can_be_set() -> None:
+    assert from_env({}, cpu_count=4).max_upload_bytes == 100_000_000, "沒設定時模型檔上限 100 MB"
+    assert from_env({"ROAD_TEST_MAX_UPLOAD_MB": "250"}, cpu_count=4).max_upload_bytes == 250_000_000

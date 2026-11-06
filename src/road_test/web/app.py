@@ -22,7 +22,9 @@ from road_test import paths
 from road_test.detector import CLASSES, Detector, ModelRejected
 from road_test.web.groups import GroupCodes
 from road_test.web.limiter import FailureLimit
+from road_test.web.upload_limit import UploadLimit
 from road_test.web.results import score_result
+from road_test.web.settings import DEFAULT_MAX_UPLOAD_MB
 from road_test.web.store import Busy, NoFinalLeft, Store
 from road_test.web.teacher import TARGET as TEACHER_TARGET, is_teacher, teacher_check
 from road_test.web.worker import Worker
@@ -73,13 +75,15 @@ def _video_key(data_dir: Path) -> bytes:
     return bytes.fromhex(path.read_text(encoding="utf-8").strip())
 
 
-def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_tests: dict[str, RoadTest],
-               workers: int = 2, fill_chunk: int = 500, teacher_password: str | None = None,
-               student_dir: Path | None = None, clock: Callable[[], float] = time.time) -> FastAPI:
+def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_tests: dict[str, RoadTest], *,
+               workers: int, fill_chunk: int = 500, teacher_password: str | None = None,
+               student_dir: Path | None = None, clock: Callable[[], float] = time.time,
+               max_upload_bytes: int = DEFAULT_MAX_UPLOAD_MB * 1_000_000) -> FastAPI:
     """data_dir：路考資料夾；load_detector：讀模型檔的函式（讀不進來要丟 ModelRejected）；
-    road_tests：{"mock": RoadTest, "final": RoadTest}；workers：背景 worker 數，0 就不開（測試自己跑 run_until_idle）；
+    road_tests：{"mock": RoadTest, "final": RoadTest}；workers：背景 worker 數（main 用 settings.from_env 的預設），0 就不開（測試自己跑 run_until_idle）；
     teacher_password：老師密碼（main 從 ROAD_TEST_TEACHER_PASSWORD 讀），None 就是老師的 API 一律拒絕；
-    student_dir：發給學生的訓練程式（預設 paths.student_dir()）；clock：現在幾秒（測試換成假時鐘）。
+    student_dir：發給學生的訓練程式（預設 paths.student_dir()）；clock：現在幾秒（測試換成假時鐘）；
+    max_upload_bytes：交件的大小上限（超過回 413，見 upload_limit.py）。
     """
     data_dir = Path(data_dir)
     student_dir = Path(student_dir) if student_dir else paths.student_dir()
@@ -94,6 +98,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
 
     app = FastAPI(title="路考網站", lifespan=lifespan)
     app.state.store = store
+    app.add_middleware(UploadLimit, max_bytes=max_upload_bytes)
     app.state.worker = worker
     guesses = FailureLimit(clock)  # 組別代碼、老師密碼猜錯太多次就暫時 429
     teacher = teacher_check(teacher_password, guesses)
