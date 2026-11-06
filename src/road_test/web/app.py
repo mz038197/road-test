@@ -15,12 +15,13 @@ from typing import Callable
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from road_test.detector import CLASSES, Detector, ModelRejected
+from road_test.web.groups import GroupCodes
 from road_test.web.results import score_result
 from road_test.web.store import Busy, NoFinalLeft, Store
-from road_test.web.teacher import teacher_check
+from road_test.web.teacher import is_teacher, teacher_check
 from road_test.web.worker import Worker
 
 STATIC = Path(__file__).parent / "static"
@@ -36,7 +37,7 @@ class RoadTest:
 
 @dataclass(frozen=True)
 class Viewer:
-    """誰在看：目前只有組別（帶組別代碼）。#10 加老師（老師密碼），老師看得到全部。"""
+    """誰在看：組別（帶組別代碼）或老師（帶老師密碼，看得到全部）。"""
     group: str | None
     teacher: bool = False
 
@@ -106,15 +107,17 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def video_url(row) -> str:
         return f"/api/submissions/{row['id']}/video?t={video_signature(row)}"
 
-    def group_codes() -> dict[str, str]:
-        """組別代碼：先讀路考資料夾的 groups.json（{"01": "代碼", ...}），#10 改成管理頁產生。每次都重讀，改了不用重開。"""
-        return json.loads((data_dir / "groups.json").read_text(encoding="utf-8"))
+    codes = GroupCodes(data_dir / "groups.json")  # 組別代碼，管理頁產生、重設（見 groups.py）
 
     def check_code(group: str, code: str) -> None:
-        if not code or group_codes().get(group) != code:
+        if not codes.matches(group, code):
             raise HTTPException(403, "組別代碼不對，請跟老師確認你們這組的組別代碼。")
 
-    def viewer(x_group: str | None = Header(None), x_group_code: str | None = Header(None)) -> Viewer:
+    def viewer(x_group: str | None = Header(None), x_group_code: str | None = Header(None),
+               x_teacher_password: str | None = Header(None)) -> Viewer:
+        """帶老師密碼的是老師（看得到全部，管理頁播放任一組用），不然要帶對的組別代碼。"""
+        if is_teacher(teacher_password, x_teacher_password):
+            return Viewer(None, teacher=True)
         check_code(x_group or "", x_group_code or "")
         return Viewer(group=x_group)
 
@@ -138,7 +141,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     @app.get("/api/groups")
     def groups():
         """交件頁的組別選單（不含代碼）。"""
-        return sorted(group_codes())
+        return sorted(codes.load())
 
     @app.get("/api/road-tests")
     def road_test_status():
@@ -265,6 +268,63 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         if not who.can_see(group):
             raise HTTPException(403, "只能看自己這組的路考紀錄。")
         return [summary(r) for r in store.of_group(group)]
+
+    # 管理頁（teacher.html）：全部要老師密碼
+    @app.get("/api/teacher/records", dependencies=[Depends(teacher)])
+    def all_records():
+        """所有組的路考紀錄，新的在前面。"""
+        return [summary(r) for r in store.everything()]
+
+    def group_table() -> list[dict]:
+        return [{"group": g, "code": c, "finals_left": store.finals_left(g)} for g, c in sorted(codes.load().items())]
+
+    def known_group(group: str) -> str:
+        if group not in codes.load():
+            raise HTTPException(404, f"沒有第 {group} 組。")
+        return group
+
+    @app.get("/api/teacher/groups", dependencies=[Depends(teacher)])
+    def group_list():
+        """各組的組別代碼和正式路考還剩幾次。"""
+        return group_table()
+
+    @app.post("/api/teacher/groups/{group}/code", dependencies=[Depends(teacher)])
+    def reset_code(group: str):
+        """重設這組的組別代碼，舊的馬上失效。"""
+        return {"group": group, "code": codes.reset(known_group(group))}
+
+    @app.post("/api/teacher/groups/{group}/final-returns", dependencies=[Depends(teacher)])
+    def return_final(group: str):
+        """還給這組一次正式路考（例如模型出錯要重交）。"""
+        store.return_final(known_group(group))
+        return {"group": group, "finals_left": store.finals_left(group)}
+
+    class Clear(BaseModel):
+        confirm: str = ""
+
+    @app.post("/api/teacher/clear", dependencies=[Depends(teacher)])
+    def clear(body: Clear):
+        """學期結束清空交件、結果、路考紀錄（含還的正式路考次數）。組別代碼和正式路考開關不清。
+        要帶 confirm="清空"（管理頁再確認一次之後才送），防止誤按。"""
+        if body.confirm != "清空":
+            raise HTTPException(400, "清空之後找不回來，請在管理頁再確認一次。")
+        store.clear()
+        return {"cleared": True}
+
+    class GroupCount(BaseModel):
+        count: int = Field(ge=1, le=99)
+
+    @app.put("/api/teacher/groups", dependencies=[Depends(teacher)])
+    def set_groups(body: GroupCount):
+        """組別改成 01…count：原本的組保留代碼，新的組產生代碼，多的刪掉（路考紀錄留著）。"""
+        codes.set_count(body.count)
+        return group_table()
+
+    @app.post("/api/teacher/codes", dependencies=[Depends(teacher)])
+    def reset_all_codes():
+        """每組都換新代碼（例如新學期），舊的全部失效。"""
+        codes.reset_all()
+        return group_table()
 
     app.mount("/", FrontEnd(directory=STATIC, html=True), name="static")
     return app

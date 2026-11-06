@@ -163,6 +163,23 @@ class Store:
         with self._db() as db:
             return db.execute("SELECT * FROM submissions WHERE id = ?", (sid,)).fetchone()
 
+    def clear(self) -> None:
+        """學期結束清空：交件、偵測框、成績、還的正式路考次數，還有交上來的模型檔。開關（settings）不動。
+
+        正在跑的那件會在 worker 下一次寫入時發現自己不見了，自然結束（見 save_detections）。
+        收件中的暫存檔（upload-*.tmp）不刪，那件收完就是清空後的第一件。
+        """
+        with self._tx() as db:
+            for table in ("submissions", "detections", "final_returns"):
+                db.execute(f"DELETE FROM {table}")
+        for path in self.models_dir.glob("*.onnx"):
+            path.unlink(missing_ok=True)
+
+    def everything(self) -> list[sqlite3.Row]:
+        """所有組的交件，新的在前面（管理頁的路考紀錄）。"""
+        with self._db() as db:
+            return db.execute("SELECT * FROM submissions ORDER BY id DESC").fetchall()
+
     def of_group(self, group: str) -> list[sqlite3.Row]:
         with self._db() as db:
             return db.execute("SELECT * FROM submissions WHERE grp = ? ORDER BY id DESC", (group,)).fetchall()
@@ -205,6 +222,8 @@ class Store:
 
     def save_detections(self, sid: int, frames: dict[int, list[dict]]) -> None:
         with self._tx() as db:
+            if db.execute("SELECT 1 FROM submissions WHERE id = ?", (sid,)).fetchone() is None:
+                return  # 偵測到一半被清空了，框不用留
             db.executemany("INSERT OR REPLACE INTO detections VALUES (?, ?, ?)",
                            [(sid, n, pack(boxes)) for n, boxes in frames.items()])
             done = db.execute("SELECT COUNT(*) FROM detections WHERE submission_id = ?", (sid,)).fetchone()[0]
