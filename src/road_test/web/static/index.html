@@ -4,77 +4,131 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>路考網站</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="steps-page">
 <main class="brief">
-  <h1>路考</h1>
-  <p class="lead">卷積神經網路的委託：幫自駕車訓練一雙眼睛。</p>
-  <p>你們這組要用<strong>訓練影片</strong>自己挑幀、標註，訓練一個 YOLO 物件偵測模型。路考時，考官播一支你們沒看過的行車影片，模型每一幀都要框出車、行人、騎腳踏車的人和號誌標誌；該注意的東西沒框到、或框到不存在的東西，考官就扣分。</p>
+  <header class="page-head">
+    <p class="eyebrow">卷積神經網路的委託</p>
+    <h1>路考</h1>
+    <p class="lead">幫自駕車訓練一雙眼睛。照著六步做完就能交件。</p>
+    <p class="muted">你們這組要用<strong>訓練影片</strong>自己挑幀、標註，訓練一個 YOLO 物件偵測模型。路考時，考官播一支你們沒看過的行車影片，模型每一幀都要框出車、行人、騎腳踏車的人和號誌標誌；該注意的東西沒框到、或框到不存在的東西，考官就扣分。</p>
+  </header>
 
-  <nav class="actions" aria-label="下載與交件">
-    <a class="button" href="/downloads/0016E5.mp4" download>下載訓練影片（0016E5.mp4，約 150 MB）</a>
-    <a class="button" href="https://colab.research.google.com/github/mz038197/road-test/blob/main/student/train_yolo_colab.ipynb" target="_blank" rel="noopener">在 Colab 開啟訓練筆記本</a>
-    <a class="button secondary" href="/downloads/train_yolo.py" download>下載本機訓練程式（train_yolo.py）</a>
-    <a class="button secondary" href="submit.html">交件、看路考紀錄 →</a>
-  </nav>
+  <div class="steps-layout">
+    <nav class="card step-nav" aria-label="步驟">
+      <ol>
+        <li><a href="#step-1"><span class="n">1</span>下載訓練影片</a></li>
+        <li><a href="#step-2"><span class="n">2</span>挑幀、標註</a></li>
+        <li><a href="#step-3"><span class="n">3</span>匯出</a></li>
+        <li><a href="#step-4"><span class="n">4</span>訓練</a></li>
+        <li><a href="#step-5"><span class="n">5</span>交模擬路考</a></li>
+        <li><a href="#step-6"><span class="n">6</span>交正式路考</a></li>
+        <li><a href="#scoring"><span class="n">?</span>考官怎麼扣分</a></li>
+        <li><a href="#notes"><span class="n">!</span>注意事項</a></li>
+      </ol>
+    </nav>
 
-  <section class="card">
-    <h2>步驟</h2>
-    <ol class="steps">
-      <li><strong>下載訓練影片。</strong>960×720、每秒約 30 幀、6 分多鐘。訓練影片不會出現在路考裡，路考考的是沒看過的路。</li>
-      <li><strong>挑幀、標註（Roboflow）。</strong>把影片上傳到 Roboflow，抽一部分的幀來標註（例如每秒 1 幀）。在每一幀裡框出看得清楚的東西，類別只有四種，名稱要一字不差：
-        <table class="classes">
-          <thead><tr><th>類別名稱</th><th>框什麼</th><th class="num">漏看扣幾分</th></tr></thead>
-          <tbody>
-            <tr><td><code>pedestrian</code></td><td>行人</td><td class="num">5</td></tr>
-            <tr><td><code>bicyclist</code></td><td>騎腳踏車的人（人和車框在一起）</td><td class="num">3</td></tr>
-            <tr><td><code>car</code></td><td>汽車、貨車、公車</td><td class="num">2</td></tr>
-            <tr><td><code>sign</code></td><td>號誌、標誌</td><td class="num">1</td></tr>
-          </tbody>
-        </table>
-      </li>
-      <li><strong>匯出。</strong>在 Roboflow 產生版本（Generate），格式選 YOLO（YOLOv8 或更新的版本都可以）。前處理的 Resize <strong>不要選 Stretch</strong>。</li>
-      <li><strong>訓練。</strong>
+    <div class="step-list">
+      <section class="card step" id="step-1">
+        <div class="n" aria-hidden="true">1</div>
+        <div class="body">
+          <h2>下載訓練影片</h2>
+          <p>960×720、每秒約 30 幀、6 分多鐘。訓練影片不會出現在路考裡，路考考的是沒看過的路。</p>
+          <div class="step-actions">
+            <a class="button" href="/downloads/0016E5.mp4" download>下載訓練影片（0016E5.mp4，約 150 MB）</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="card step" id="step-2">
+        <div class="n" aria-hidden="true">2</div>
+        <div class="body">
+          <h2>挑幀、標註（Roboflow）</h2>
+          <p>把影片上傳到 Roboflow，抽一部分的幀來標註（例如每秒 1 幀）。在每一幀裡框出看得清楚的東西，類別只有四種，名稱要一字不差：</p>
+          <div class="class-grid">
+            <div><code>pedestrian</code>行人<span class="pts">漏看 −5</span></div>
+            <div><code>bicyclist</code>騎腳踏車的人（人和車框在一起）<span class="pts">漏看 −3</span></div>
+            <div><code>car</code>汽車、貨車、公車<span class="pts">漏看 −2</span></div>
+            <div><code>sign</code>號誌、標誌<span class="pts">漏看 −1</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card step" id="step-3">
+        <div class="n" aria-hidden="true">3</div>
+        <div class="body">
+          <h2>匯出</h2>
+          <p>在 Roboflow 產生版本（Generate），格式選 YOLO（YOLOv8 或更新的版本都可以）。前處理的 Resize <strong>不要選 Stretch</strong>。</p>
+        </div>
+      </section>
+
+      <section class="card step" id="step-4">
+        <div class="n" aria-hidden="true">4</div>
+        <div class="body">
+          <h2>訓練</h2>
+          <ul>
+            <li><strong>Colab（建議）</strong>：打開訓練筆記本，照筆記本的說明換成 GPU、填 Roboflow 的專案，從頭跑到尾，最後會下載 <code>road-test-model.onnx</code>。</li>
+            <li><strong>自己的電腦</strong>：下載 <code>train_yolo.py</code>，把 Roboflow 匯出的壓縮檔解壓成同一個資料夾裡的 <code>dataset/</code>，在專案裡 <code>uv add ultralytics</code> 後執行 <code>uv run python train_yolo.py</code>。沒有 NVIDIA 顯卡會很慢，先把 <code>EPOCHS</code> 改成 3 確認資料沒問題，正式訓練到 Colab。</li>
+          </ul>
+          <p>兩種跑完都會得到 <code>road-test-model.onnx</code>，就是要交的模型檔。組別和 CONF 不用在訓練程式裡設定，交件時再填。</p>
+          <div class="step-actions">
+            <a class="button" href="https://colab.research.google.com/github/mz038197/road-test/blob/main/student/train_yolo_colab.ipynb" target="_blank" rel="noopener">在 Colab 開啟訓練筆記本 ↗</a>
+            <a class="button secondary" href="/downloads/train_yolo.py" download>下載本機訓練程式（train_yolo.py）</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="card step" id="step-5">
+        <div class="n" aria-hidden="true">5</div>
+        <div class="body">
+          <h2>交模擬路考</h2>
+          <p>到交件頁選組別、輸入組別代碼（老師發給每組的密碼），上傳模型檔，填 CONF。通常一分鐘內就有成績；結果頁可以播放整場路考、看考官紀錄，也能拖 CONF 試算。模擬路考可以交很多次，每組同時只能有一件在跑。</p>
+          <div class="step-actions">
+            <a class="button" href="submit.html">交件、看路考紀錄 →</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="card step" id="step-6">
+        <div class="n" aria-hidden="true">6</div>
+        <div class="body">
+          <h2>交正式路考</h2>
+          <p>老師在課堂上開放時才能交，<strong>每組只能交一次</strong>，CONF 交了就鎖定。開放期間模擬路考暫停收件。</p>
+        </div>
+      </section>
+
+      <section class="card" id="scoring">
+        <h2>考官怎麼扣分</h2>
         <ul>
-          <li><strong>Colab（建議）</strong>：按上面的「在 Colab 開啟訓練筆記本」，照筆記本的說明換成 GPU、填 Roboflow 的專案，從頭跑到尾，最後會下載 <code>road-test-model.onnx</code>。</li>
-          <li><strong>自己的電腦</strong>：下載 <code>train_yolo.py</code>，把 Roboflow 匯出的壓縮檔解壓成同一個資料夾裡的 <code>dataset/</code>，在專案裡 <code>uv add ultralytics</code> 後執行 <code>uv run python train_yolo.py</code>。沒有 NVIDIA 顯卡會很慢，先把 <code>EPOCHS</code> 改成 3 確認資料沒問題，正式訓練到 Colab。</li>
+          <li>路考影片每秒有一幀是<strong>計分幀</strong>，只有計分幀會扣分，其他幀只畫出你的偵測框。</li>
+          <li><strong>必看</strong>：計分幀裡夠大、司機應該要注意到的東西。太遠太小的不算必看，沒框到不扣分，框到也不算誤判。</li>
+          <li><strong>框到才算看見</strong>：類別要對，信心分數要到 CONF 以上，框還要跟正確的位置重疊夠多（重疊的面積夠大，或你的框有一半以上落在正確的框裡）。幾台車黏在一起時，分開框每一台也算對。</li>
+          <li><strong>漏看</strong>：必看的東西沒框到。每個東西只算一次，扣多少看<strong>反應時間</strong>（它變成必看後，過了幾秒才第一次被框到）：
+            <ul>
+              <li>當秒就框到：不扣</li>
+              <li>晚 1 秒：扣一半</li>
+              <li>晚 2 秒以上，或一直沒框到：扣滿（行人 5、騎腳踏車的人 3、車 2、號誌標誌 1）</li>
+            </ul>
+          </li>
+          <li><strong>誤判</strong>：框到一個不存在的東西，扣 1 分。同一個不存在的東西連續幾秒都被框到，也只扣一次。</li>
+          <li><strong>成績</strong> = 100 ×（1 − 扣掉的分數 ÷ 扣滿的分數），最低 0 分。扣滿的分數是整場所有必看東西的分數加起來，所以一路上都沒漏看、沒誤判就是 100 分。</li>
+          <li><strong>CONF</strong>（信心門檻）：模型對每個框都有一個 0 到 1 的信心分數，到 CONF 以上才算看見。CONF 調低，漏看變少、誤判變多；調高則相反。先在模擬路考的結果頁拖拖看，再決定正式路考要交多少。</li>
         </ul>
-        兩種跑完都會得到 <code>road-test-model.onnx</code>，就是要交的模型檔。組別和 CONF 不用在訓練程式裡設定，交件時再填。
-      </li>
-      <li><strong>交模擬路考。</strong>到<a href="submit.html">交件頁</a>選組別、輸入組別代碼（老師發給每組的密碼），上傳模型檔，填 CONF。通常一分鐘內就有成績；結果頁可以播放整場路考、看考官紀錄，也能拖 CONF 試算。模擬路考可以交很多次，每組同時只能有一件在跑。</li>
-      <li><strong>交正式路考。</strong>老師在課堂上開放時才能交，<strong>每組只能交一次</strong>，CONF 交了就鎖定。開放期間模擬路考暫停收件。</li>
-    </ol>
-  </section>
+      </section>
 
-  <section class="card">
-    <h2>考官怎麼扣分</h2>
-    <ul>
-      <li>路考影片每秒有一幀是<strong>計分幀</strong>，只有計分幀會扣分，其他幀只畫出你的偵測框。</li>
-      <li><strong>必看</strong>：計分幀裡夠大、司機應該要注意到的東西。太遠太小的不算必看，沒框到不扣分，框到也不算誤判。</li>
-      <li><strong>框到才算看見</strong>：類別要對，信心分數要到 CONF 以上，框還要跟正確的位置重疊夠多（重疊的面積夠大，或你的框有一半以上落在正確的框裡）。幾台車黏在一起時，分開框每一台也算對。</li>
-      <li><strong>漏看</strong>：必看的東西沒框到。每個東西只算一次，扣多少看<strong>反應時間</strong>（它變成必看後，過了幾秒才第一次被框到）：
+      <section class="card warn" id="notes">
+        <h2>注意事項</h2>
         <ul>
-          <li>當秒就框到：不扣</li>
-          <li>晚 1 秒：扣一半</li>
-          <li>晚 2 秒以上，或一直沒框到：扣滿（行人 5、騎腳踏車的人 3、車 2、號誌標誌 1）</li>
+          <li>Roboflow 匯出時 Resize 不要選 <strong>Stretch</strong>：Stretch 會把 4:3 的畫面硬拉成正方形，車和人都變形；路考時是等比例縮小、旁邊補灰邊，訓練時看到的形狀跟路考不一樣，就認不出來。選 Fit（補邊），或不要 Resize。</li>
+          <li>類別名稱必須是 <code>car</code>、<code>pedestrian</code>、<code>bicyclist</code>、<code>sign</code>，全部小寫、拼字一樣，不能多也不能少。訓練程式一開始會檢查，交件時網站也會再檢查一次，不對就退件（退件不算次數）。</li>
+          <li>交的是訓練程式匯出的 <code>.onnx</code> 檔，不是 <code>.pt</code>。</li>
+          <li>組別代碼不要給別組。每組同時只能有一件路考在跑，等它跑完再交下一件。</li>
         </ul>
-      </li>
-      <li><strong>誤判</strong>：框到一個不存在的東西，扣 1 分。同一個不存在的東西連續幾秒都被框到，也只扣一次。</li>
-      <li><strong>成績</strong> = 100 ×（1 − 扣掉的分數 ÷ 扣滿的分數），最低 0 分。扣滿的分數是整場所有必看東西的分數加起來，所以一路上都沒漏看、沒誤判就是 100 分。</li>
-      <li><strong>CONF</strong>（信心門檻）：模型對每個框都有一個 0 到 1 的信心分數，到 CONF 以上才算看見。CONF 調低，漏看變少、誤判變多；調高則相反。先在模擬路考的結果頁拖拖看，再決定正式路考要交多少。</li>
-    </ul>
-  </section>
-
-  <section class="card">
-    <h2>注意事項</h2>
-    <ul>
-      <li>Roboflow 匯出時 Resize 不要選 <strong>Stretch</strong>：Stretch 會把 4:3 的畫面硬拉成正方形，車和人都變形；路考時是等比例縮小、旁邊補灰邊，訓練時看到的形狀跟路考不一樣，就認不出來。選 Fit（補邊），或不要 Resize。</li>
-      <li>類別名稱必須是 <code>car</code>、<code>pedestrian</code>、<code>bicyclist</code>、<code>sign</code>，全部小寫、拼字一樣，不能多也不能少。訓練程式一開始會檢查，交件時網站也會再檢查一次，不對就退件（退件不算次數）。</li>
-      <li>交的是訓練程式匯出的 <code>.onnx</code> 檔，不是 <code>.pt</code>。</li>
-      <li>組別代碼不要給別組。每組同時只能有一件路考在跑，等它跑完再交下一件。</li>
-    </ul>
-  </section>
+      </section>
+    </div>
+  </div>
 </main>
 </body>
 </html>

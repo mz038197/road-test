@@ -80,3 +80,14 @@ def test_every_link_on_the_site_pages_works(client, training_video, page: str) -
             continue
         response = client.get(urlsplit(urljoin(f"http://testserver{page}", link)).path)
         assert response.status_code == 200, f"{page} 裡的 {link} 打不開（{response.status_code}）"
+
+
+@pytest.mark.parametrize("page", ["/", "/submit.html"])
+def test_step_navigation_jumps_to_each_step(client, page: str) -> None:
+    html = client.get(page).text
+    anchors = re.findall(r'href="#([^"]+)"', html)
+    ids = set(re.findall(r'\bid="([^"]+)"', html))
+
+    assert anchors, f"{page} 左邊要有步驟導覽（連到頁內每一步）"
+    missing = [a for a in anchors if a not in ids]
+    assert not missing, f"{page} 的步驟導覽連到不存在的地方：{missing}"
