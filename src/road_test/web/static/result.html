@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>路考結果</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <p><a href="index.html">← 回交件頁</a></p>
+  <h1 id="title">路考結果</h1>
+  <p class="muted" id="meta"></p>
+
+  <section class="card">
+    <h2>進度</h2>
+    <p id="status">讀取中…</p>
+    <progress id="progress" max="1" value="0" hidden></progress>
+    <p class="muted" id="progress-text"></p>
+    <p id="error" class="error" role="alert"></p>
+  </section>
+
+  <section class="card" id="score-card" hidden>
+    <h2>成績</h2>
+    <div class="score" id="score"></div>
+    <p class="muted" id="score-detail"></p>
+  </section>
+
+  <section class="card" id="log-card" hidden>
+    <h2>考官紀錄</h2>
+    <p class="muted" id="log-empty" hidden>沒有扣分。</p>
+    <ol class="log" id="log"></ol>
+  </section>
+</main>
+<script src="common.js"></script>
+<script src="result.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>路考網站</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>路考網站</h1>
+  <p class="muted">交模型考模擬路考。模擬路考可以交很多次，每組同時只能有一件在跑。</p>
+
+  <form id="submit" class="card">
+    <h2>交模擬路考</h2>
+    <label for="group">組別</label>
+    <select id="group" name="group" required></select>
+    <label for="code">組別代碼</label>
+    <input id="code" name="code" type="password" autocomplete="off" required>
+    <label for="model">模型檔（訓練程式匯出的 .onnx，檔名不拘）</label>
+    <input id="model" name="model" type="file" accept=".onnx" required>
+    <input type="hidden" name="kind" value="mock">
+    <button type="submit">交件</button>
+    <p id="submit-error" class="error" role="alert"></p>
+  </form>
+
+  <section class="card">
+    <h2>我們這組的路考紀錄</h2>
+    <p class="muted" id="records-hint">填好上面的組別和組別代碼，按「看路考紀錄」。</p>
+    <button type="button" class="secondary" id="show-records">看路考紀錄</button>
+    <p id="records-error" class="error" role="alert"></p>
+    <div class="table-wrap">
+      <table id="records" hidden>
+        <thead><tr><th>上傳時間</th><th>路考</th><th>檔名</th><th>狀態</th><th class="num">成績</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script src="common.js"></script>
+<script src="index.js"></script>
+</body>
+</html>

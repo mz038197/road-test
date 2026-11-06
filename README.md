@@ -10,6 +10,14 @@ src/road_test/      Python 套件，網站和老師工具都從這裡 import
   answers.py        從 CamVid 標註圖產生路考答案（make-answers）
   alignment.py      影片幀和標註幀怎麼對齊的判斷規則
   scoring.py        計分：score(answers, detections, conf) → 考官紀錄、每個計分幀的判定、成績
+  detector.py       偵測器：OnnxDetector 用 onnxruntime 跑學生的 ONNX（結果跟 ultralytics 一樣）
+  web/              路考網站（FastAPI）
+    app.py          HTTP API；create_app(資料夾, 偵測器, 路考) 讓測試換成假偵測器
+    store.py        交件、偵測結果、成績存在 SQLite
+    worker.py       排隊：先偵測計分幀算成績，再補完其餘的幀
+    results.py      偵測框 → 成績（加上影片幀號）
+    main.py         road-test-site 啟動指令
+    static/         前端：純 HTML、JS、CSS
 scripts/            老師一次性的腳本
   align_video.py    比對影片和標註，找出位移
   overlay_answers.py  答案框疊在路考影片上，目視檢查
@@ -33,6 +41,16 @@ uv run pytest
 uv sync --group train
 ```
 
+## 啟動路考網站
+
+```powershell
+$env:ROAD_TEST_DATA = "D:\road-test-data"
+uv run road-test-site                 # http://127.0.0.1:8000
+uv run road-test-site --host 0.0.0.0 --port 8080
+```
+
+`ROAD_TEST_WORKERS`：同時跑幾件（預設 2）；`ROAD_TEST_THREADS`：每個 worker 推論用幾個執行緒（預設 CPU 核心數 ÷ worker 數）。
+
 ## 資料夾
 
 答案、路考影片、交件、結果、組別代碼和老師密碼都不進 git（這是公開 repo）。資料放在 repo 外，用環境變數指過去：
@@ -51,6 +69,9 @@ $ROAD_TEST_DATA/
   videos/0016E5.mp4    訓練影片
   answers/Seq05VD.json 正式路考的答案（171 個計分幀）
   answers/0006R0.json  模擬路考的答案（101 個計分幀）
+  groups.json          組別代碼 {"01": "代碼", ...}（組別用英數字，會放在 HTTP 標頭裡）
+  road_test.db         網站產生：交件、排隊、偵測結果、成績（SQLite）
+  submissions/         網站產生：交上來的模型，改名成 組別_路考種類_上傳時間_編號.onnx
 ```
 
 兩支路考 MP4 都剪成「第 n 幀就是標註 f(n)」，見 `docs/alignment.md`。原始影片（MXF）和 MP4 的備份在老師的 Google Drive `影像資料集/CamVid/raw_video`。
