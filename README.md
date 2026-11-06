@@ -18,14 +18,16 @@ src/road_test/      Python 套件，網站和老師工具都從這裡 import
     results.py      偵測框 → 成績（加上影片幀號）
     main.py         road-test-site 啟動指令
     static/         前端：純 HTML、JS、CSS
+      index.html    首頁＝委託頁：說明、計分規則、注意事項、下載訓練影片和訓練程式、在 Colab 開啟
+      submit.html   交件、看自己這組的路考紀錄
       playback.js   結果頁播放的計算（時間 ↔ 幀號、某一幀的判定、考官紀錄、分數），有 node 測試
       player.js     播放器：<video> 疊 canvas、播放控制、考官紀錄
 scripts/            老師一次性的腳本
   align_video.py    比對影片和標註，找出位移
   overlay_answers.py  答案框疊在路考影片上，目視檢查
-student/            發給學生的訓練程式
-  train_yolo.py           本機版
-  train_yolo_colab.ipynb  Colab 版
+student/            發給學生的訓練程式（跑完輸出 road-test-model.onnx；組別和 CONF 交件時才填）
+  train_yolo.py           本機版，委託頁 /downloads/train_yolo.py 下載
+  train_yolo_colab.ipynb  Colab 版，委託頁用 colab.research.google.com/github/mz038197/road-test/blob/main/student/… 打開（訓練那一格要跟 train_yolo.py 一樣，有測試）
 tests/              pytest；tests/js/ 是前端的 node --test
 docs/alignment.md   兩場路考的影片怎麼對齊、怎麼轉成 MP4
 ```
@@ -54,6 +56,8 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 
 `ROAD_TEST_WORKERS`：同時跑幾段偵測（預設 CPU 核心數 ÷ 2）；`ROAD_TEST_THREADS`：每個 worker 推論用幾個執行緒（預設 CPU 核心數 ÷ worker 數）；`ROAD_TEST_IDLE_MINUTES`：沒人連線、也沒有路考在跑幾分鐘後網站自己結束（預設不結束，Fly 上是 10）。
 
+`ROAD_TEST_STUDENT`：學生訓練程式的資料夾（預設 repo 的 `student/`；Docker 映像裡是 `/app/student`）。
+
 `ROAD_TEST_TEACHER_PASSWORD`：老師密碼（Fly 上放 secrets）。沒設定的話，管理頁和老師的 API 一律拒絕。
 
 ### 管理頁 `/teacher.html`
@@ -81,7 +85,7 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 $ROAD_TEST_DATA/
   videos/Seq05VD.mp4   正式路考，960×720，5101 幀
   videos/0006R0.mp4    模擬路考，960×720，3931 幀
-  videos/0016E5.mp4    訓練影片
+  videos/0016E5.mp4    訓練影片（委託頁 /downloads/0016E5.mp4，不用組別代碼）。SAR 已改成 1:1，播放器裡是 4:3
   answers/Seq05VD.json 正式路考的答案（171 個計分幀）
   answers/0006R0.json  模擬路考的答案（101 個計分幀）
   groups.json          網站產生：組別代碼 {"01": "bako-mite", ...}，管理頁產生、重設（組別用英數字，會放在 HTTP 標頭裡）
@@ -123,7 +127,7 @@ uv run make-answers --camvid <CamVid資料夾> --out <答案.json>
 
 | 東西 | 在哪裡 |
 |---|---|
-| 程式、前端 | Docker 映像（`Dockerfile`），只有 `pyproject.toml`、`uv.lock`、`src/` |
+| 程式、前端、學生訓練程式 | Docker 映像（`Dockerfile`），只有 `pyproject.toml`、`uv.lock`、`src/`、`student/` |
 | 路考影片、答案、組別代碼、交件、成績、路考紀錄 | volume `road_test_data`（5 GB，東京 nrt），掛在 `/data` = `ROAD_TEST_DATA`。重新部署不會不見 |
 | 老師密碼 | Fly secrets `ROAD_TEST_TEACHER_PASSWORD` |
 | GitHub Actions 部署用的 token | repo secret `FLY_API_TOKEN`（`flyctl tokens create deploy -a road-test`） |

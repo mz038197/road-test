@@ -1,6 +1,7 @@
-# 映像只要 pyproject.toml、uv.lock、src/。其他（尤其資料、模型、影片）一律不送進 build context。
+# 映像只要 pyproject.toml、uv.lock、src/、student/。其他（尤其資料、模型、影片）一律不送進 build context。
 *
 !pyproject.toml
 !uv.lock
 !src/
+!student/
 src/**/__pycache__/

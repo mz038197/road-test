@@ -1,4 +1,4 @@
-# 路考網站的映像：只有程式和前端。路考影片、答案、交件、成績都在 Fly volume（/data），不進映像。
+# 路考網站的映像：只有程式、前端和學生訓練程式。路考影片、答案、交件、成績都在 Fly volume（/data），不進映像。
 FROM python:3.12-slim
 COPY --from=ghcr.io/astral-sh/uv:0.12.13 /uv /usr/local/bin/uv
 
@@ -9,8 +9,10 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 COPY src ./src
+# 委託頁提供下載的學生訓練程式
+COPY student ./student
 RUN uv sync --locked --no-dev --no-editable
 
-ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 ROAD_TEST_DATA=/data
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 ROAD_TEST_DATA=/data ROAD_TEST_STUDENT=/app/student
 EXPOSE 8080
 CMD ["road-test-site", "--host", "0.0.0.0", "--port", "8080"]
