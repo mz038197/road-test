@@ -13,6 +13,7 @@ from road_test.detector import ModelRejected
 from road_test.web.app import RoadTest, create_app
 
 GROUPS = {"01": "apple", "02": "banana", "03": "cherry"}
+TEACHER = "teacher-secret"
 CLASSES = ["car", "pedestrian", "bicyclist", "sign"]
 PED = [100, 100, 140, 200]
 CAR = [300, 200, 400, 260]
@@ -68,8 +69,10 @@ def open_site(data_dir: Path):
     opened = []
 
     def open_(**options) -> TestClient:
+        options.setdefault("teacher_password", TEACHER)
         app = create_app(data_dir, load_detector=FakeDetector,
-                         road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT)}, workers=0, **options)
+                         road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT),
+                                     "final": RoadTest("final", "Mini", FRAME_COUNT)}, workers=0, **options)
         c = TestClient(app)
         c.__enter__()
         opened.append(c)
@@ -86,10 +89,13 @@ def client(open_site) -> TestClient:
 
 
 def submit(client: TestClient, group: str = "01", code: str | None = None, content: bytes | None = None,
-           filename: str = "best.onnx", conf: float | None = None):
-    data = {"group": group, "code": GROUPS.get(group, "") if code is None else code, "kind": "mock"}
+           filename: str = "best.onnx", conf: float | None = None, kind: str = "mock", confirm: bool = True):
+    """交件。正式路考預設勾了「交了就不能重交」的確認（confirm=False 就是沒勾）。"""
+    data = {"group": group, "code": GROUPS.get(group, "") if code is None else code, "kind": kind}
     if conf is not None:
         data["conf"] = str(conf)
+    if kind == "final" and confirm:
+        data["confirm"] = "true"
     return client.post("/api/submissions", data=data, files={"model": (filename, content or model(), "application/octet-stream")})
 
 
@@ -100,3 +106,12 @@ def run_queue(client: TestClient) -> None:
 
 def as_group(group: str) -> dict:
     return {"X-Group": group, "X-Group-Code": GROUPS[group]}
+
+
+def as_teacher(password: str = TEACHER) -> dict:
+    return {"X-Teacher-Password": password}
+
+
+def set_final(client: TestClient, is_open: bool):
+    """老師開關正式路考。"""
+    return client.put("/api/teacher/final", json={"open": is_open}, headers=as_teacher())

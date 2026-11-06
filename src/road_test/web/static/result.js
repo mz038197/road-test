@@ -27,18 +27,18 @@ async function poll() {
     s.status === "queued" ? "" : `已偵測 ${s.progress.done} / ${s.progress.total} 幀`;
 
   if (s.result && !shownResult) {
-    showResult(s.result);
+    showResult(s.result, s);
     shownResult = true;
   }
   if (s.status !== "done" && s.status !== "failed") setTimeout(poll, 1000);
 }
 
-function showResult(r) {
+function showResult(r, s) {
   document.getElementById("score-card").hidden = false;
   document.getElementById("log-card").hidden = false;
   document.getElementById("score").textContent = `${r.score} 分`;
   document.getElementById("score-detail").textContent =
-    `已扣 ${+r.deducted.toFixed(1)} 分，扣滿 ${r.full} 分（CONF ${r.conf}）`;
+    `已扣 ${+r.deducted.toFixed(1)} 分，扣滿 ${r.full} 分（CONF ${r.conf}${s.conf_locked ? "，正式路考交件時鎖定" : ""}）`;
   document.getElementById("log-empty").hidden = r.log.length > 0;
   document.getElementById("log").innerHTML = r.log.map(e => `
     <li><span class="t">${clock(e.video_time)}</span>

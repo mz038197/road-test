@@ -15,6 +15,15 @@ from road_test.detector import CLASSES
 QUEUED, SCORING, FILLING, DONE, FAILED = "queued", "scoring", "filling", "done", "failed"
 # 「每組同時一件」算的是這些狀態：成績出來了但其餘的幀還沒補完，也算還在跑
 ACTIVE = (QUEUED, SCORING, FILLING)
+FINAL_TRIES = 1  # 正式路考每組幾次；老師還次數（#10）就在 final_returns 加一列
+
+
+class Busy(Exception):
+    """這組已經有一件在跑。"""
+
+
+class NoFinalLeft(Exception):
+    """這組的正式路考次數用完了。"""
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS submissions (
@@ -35,6 +44,15 @@ CREATE TABLE IF NOT EXISTS submissions (
     started_at  TEXT,
     scored_at   TEXT,
     done_at     TEXT
+);
+CREATE TABLE IF NOT EXISTS settings (    -- 老師的開關，例如 final_open（正式路考開放中）
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL                    -- JSON
+);
+CREATE TABLE IF NOT EXISTS final_returns (  -- 老師還給某組的正式路考次數（#10），一列 = 多一次
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    grp         TEXT NOT NULL,
+    returned_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS detections (
     submission_id INTEGER NOT NULL,
@@ -99,12 +117,37 @@ class Store:
         with self._db() as db:
             return db.execute(f"SELECT 1 FROM submissions WHERE status IN {ACTIVE} LIMIT 1").fetchone() is not None
 
+    def finals_left(self, group: str, db: sqlite3.Connection | None = None) -> int:
+        """這組還能交幾次正式路考：FINAL_TRIES + 老師還的次數 − 已經交的（收下的都算，出錯的也算）。"""
+        if db is None:
+            with self._db() as db:
+                return self.finals_left(group, db)
+        used = db.execute("SELECT COUNT(*) FROM submissions WHERE grp = ? AND kind = 'final'", (group,)).fetchone()[0]
+        returned = db.execute("SELECT COUNT(*) FROM final_returns WHERE grp = ?", (group,)).fetchone()[0]
+        return FINAL_TRIES + returned - used
+
+    def return_final(self, group: str) -> None:
+        """還給這組一次正式路考（#10 管理頁用）。"""
+        with self._db() as db:
+            db.execute("INSERT INTO final_returns (grp, returned_at) VALUES (?, ?)", (group, now()))
+
     def add(self, group: str, kind: str, sequence: str, conf: float, filename: str, upload: Path,
-            frames_total: int, priority: int = 0) -> int | None:
-        """收件並排隊，模型檔改名成「組別_路考種類_上傳時間_編號.onnx」。這組已經有一件在跑就回傳 None。"""
+            frames_total: int, priority: int = 0) -> int:
+        """收件並排隊，模型檔改名成「組別_路考種類_上傳時間_編號.onnx」。
+
+        模擬路考：這組有任何一件在跑就丟 Busy。正式路考：次數用完丟 NoFinalLeft；
+        不用等這組的模擬路考跑完（正式路考開放時，模擬路考可能還在補幀）。
+        """
         with self._tx() as db:
-            if db.execute(f"SELECT 1 FROM submissions WHERE grp = ? AND status IN {ACTIVE}", (group,)).fetchone():
-                return None
+            if kind == "final":
+                if self.finals_left(group, db) <= 0:
+                    raise NoFinalLeft
+                busy = db.execute(f"SELECT 1 FROM submissions WHERE grp = ? AND kind = 'final' AND status IN {ACTIVE}",
+                                  (group,)).fetchone()
+            else:
+                busy = db.execute(f"SELECT 1 FROM submissions WHERE grp = ? AND status IN {ACTIVE}", (group,)).fetchone()
+            if busy:
+                raise Busy
             uploaded = now()
             cur = db.execute(
                 "INSERT INTO submissions (grp, kind, sequence, conf, filename, priority, status, frames_total, uploaded_at)"
@@ -134,6 +177,16 @@ class Store:
                 "SELECT COUNT(*) FROM submissions WHERE status = ? AND (priority > ? OR (priority = ? AND id < ?))",
                 (QUEUED, row["priority"], row["priority"], row["id"])).fetchone()[0]
             return ahead + 1
+
+    # 老師的開關（存在 SQLite，重開機還在）
+    def setting(self, key: str, default=None):
+        with self._db() as db:
+            row = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+            return json.loads(row[0]) if row else default
+
+    def set_setting(self, key: str, value) -> None:
+        with self._db() as db:
+            db.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", (key, json.dumps(value, ensure_ascii=False)))
 
     # worker 用
     def claim_queued(self) -> sqlite3.Row | None:
