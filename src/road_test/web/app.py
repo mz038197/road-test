@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from road_test.detector import CLASSES, Detector, ModelRejected
+from road_test.web.results import score_result
 from road_test.web.store import Busy, NoFinalLeft, Store
 from road_test.web.teacher import teacher_check
 from road_test.web.worker import Worker
@@ -212,6 +213,23 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         return {**summary(row), "position": store.position(sid), "video_url": video_url(row),
                 "progress": {"done": row["frames_done"], "total": row["frames_total"]},
                 "result": json.loads(row["result"]) if row["result"] else None}
+
+    @app.get("/api/submissions/{sid}/rescore")
+    def rescore(sid: int, conf: float, who: Viewer = Depends(viewer)):
+        """CONF 滑桿：用新的 CONF 重算存下來的框（低門檻 0.05 的全部框），回傳跟 result 一樣格式的成績。
+
+        只是讓學生看看調 CONF 的效果：不重新偵測、不排隊、不改交件的成績。正式路考的 CONF 鎖定，不能重算。
+        """
+        row = visible(sid, who)
+        if row["kind"] == "final":
+            raise HTTPException(400, "正式路考的 CONF 交件時就鎖定了，不能重算。")
+        if not row["result"]:
+            raise HTTPException(409, "成績還沒出來，等成績出來再調 CONF。")
+        if not 0.05 <= conf <= 1:
+            raise HTTPException(400, "CONF 要在 0.05 到 1 之間。")
+        answers = worker.answers(row["sequence"])
+        frames = [f["frame"] for f in answers["frames"]]
+        return score_result(answers, store.detections(sid, frames), conf)
 
     @app.get("/api/submissions/{sid}/detections")
     def detections(sid: int, who: Viewer = Depends(viewer)):
