@@ -6,9 +6,11 @@ from road_test.scoring import score
 
 CAR = [100, 100, 200, 160]
 
-def _answers(*frames: list[dict]) -> dict:
-    """每個參數是一個計分幀的答案東西清單。"""
-    return {"sequence": "Test", "frames": [{"name": f"Test_f{i:05d}.png", "objects": objs} for i, objs in enumerate(frames)]}
+def _answers(*frames: list[dict], video_frames: list[int] | None = None, fps: float = 30) -> dict:
+    """每個參數是一個計分幀的答案東西清單。計分幀預設是影片第 0、30、60… 幀（fps 30，每秒一幀）。"""
+    video_frames = video_frames or [30 * i for i in range(len(frames))]
+    return {"sequence": "Test", "fps": fps, "frames": [
+        {"name": f"Test_f{n:05d}.png", "frame": n, "objects": objs} for n, objs in zip(video_frames, frames)]}
 
 
 def _obj(cls: str, box: list[int], relevant: bool = True) -> dict:
@@ -196,3 +198,26 @@ def test_two_false_alarms_in_one_frame_are_two_even_if_both_touch_one_before() -
     result = score(answers, detections, conf=0.35)
 
     assert _count(result, "誤判") == 2, "同一幀兩個誤判框是兩個東西，各扣 1 分"
+
+
+def test_reaction_time_comes_from_video_frames_and_fps() -> None:
+    # 計分幀是影片第 0、30、90 幀（fps 30）：第 1 到第 2 個計分幀之間隔了 2 秒
+    answers = _answers(*[[_obj("pedestrian", CAR)] for _ in range(3)], video_frames=[0, 30, 90], fps=30)
+    answers["frames"][0]["objects"][0]["relevant"] = False
+
+    result = score(answers, [[], [], [_det("pedestrian", CAR)]], conf=0.35)
+
+    assert result["log"] == [
+        {"frame": 2, "time": 3, "cls": "pedestrian", "kind": "漏看", "reaction": 2, "penalty": 5}
+    ], "變成必看之後 60 幀（2 秒）才看見，要扣滿；time 是從第一個計分幀起算的秒數"
+
+
+def test_scoring_frames_30_frames_apart_at_29_97_fps_count_as_1_second() -> None:
+    answers = _answers(*[[_obj("pedestrian", CAR)] for _ in range(4)], fps=29.97)
+    answers["frames"][0]["objects"][0]["relevant"] = False
+
+    result = score(answers, [[], [], [_det("pedestrian", CAR)], []], conf=0.35)
+
+    assert result["log"][0]["reaction"] == 1, "30 幀在 29.97 fps 是 1.001 秒，四捨五入算 1 秒"
+    assert result["frames"][2]["marks"][0]["color"] == "green"
+    assert result["frames"][1]["marks"][0]["waiting"] == 0

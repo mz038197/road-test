@@ -1,7 +1,8 @@
 """路考計分（純函式）。
 
 輸入一場路考的答案、每個計分幀的偵測結果和 CONF，輸出考官紀錄、每個計分幀的判定和成績。
-計分幀每秒一幀，所以第 i 個計分幀就是第 i 秒；反應時間只有整數秒。
+秒數用答案裡每個計分幀的影片幀號和 fps 算（CamVid 計分幀隔 30 幀，29.97 fps 是 1.001 秒）；
+反應時間、等待秒數取兩個計分幀相差秒數的四捨五入，所以只有整數秒。
 座標的單位不限（480×360 或 960×720 都可以），答案和偵測結果用同一種就好。
 """
 import math
@@ -95,10 +96,12 @@ def _miss_penalty(cls, reaction):
 def score(answers: dict, detections: list[list[dict]], conf: float) -> dict:
     """計分一場路考。
 
-    answers：{"frames": [{"name", "objects": [{"cls", "box": [x1, y1, x2, y2], "relevant"}]}]}，每個計分幀一個。
+    answers：{"fps", "frames": [{"name", "frame"（影片幀號）, "objects": [{"cls", "box": [x1, y1, x2, y2], "relevant"}]}]}，
+      每個計分幀一個。
     detections：跟 answers["frames"] 一樣長，每個計分幀一串 {"cls", "box", "conf"}（可以含低於 CONF 的框）。
     回傳（可以直接 json.dumps）：
       log：考官紀錄，照結算時間排；每條 {"frame", "time", "cls", "kind": "漏看"|"誤判", "reaction", "penalty"}
+        frame 是第幾個計分幀（0 起算），time 是從第一個計分幀起算的秒數（四捨五入）
       frames：每個計分幀 {"frame", "time", "name", "marks": [{"color": "green"|"red"|"orange", "cls", "box", "waiting"?}]}
       deducted、full（扣滿）、score（0–100）
     """
@@ -106,6 +109,12 @@ def score(answers: dict, detections: list[list[dict]], conf: float) -> dict:
     if len(detections) != len(frames):
         raise ValueError(f"偵測結果有 {len(detections)} 幀，答案有 {len(frames)} 個計分幀，數目要一樣")
     last = len(frames) - 1
+    start = answers["frames"][0]["frame"] if frames else 0
+    seconds = [(f["frame"] - start) / answers["fps"] for f in answers["frames"]]
+
+    def gap(a, b):
+        """第 a 到第 b 個計分幀隔了幾秒（四捨五入成整數）。"""
+        return round(seconds[b] - seconds[a])
     kept = [[d for d in dets if d["conf"] >= conf] for dets in detections]
 
     # 必看的東西：第一次變成必看、第一次被框到、最後出現在哪一幀
@@ -128,10 +137,10 @@ def score(answers: dict, detections: list[list[dict]], conf: float) -> dict:
         if t["seen"] is None:
             reaction, at = None, min(t["last"] + 1, last)
         else:
-            reaction, at = max(0, t["seen"] - t["relevant"]), t["seen"]
+            reaction, at = max(0, gap(t["relevant"], t["seen"])), t["seen"]
         penalty = _miss_penalty(t["cls"], reaction)
         if penalty:
-            log.append({"frame": at, "time": at, "cls": t["cls"], "kind": MISS, "reaction": reaction, "penalty": penalty})
+            log.append({"frame": at, "time": gap(0, at), "cls": t["cls"], "kind": MISS, "reaction": reaction, "penalty": penalty})
 
     # 誤判：對不上任何答案框（含非必看的東西）的偵測框。串成東西時用全部的偵測框、不管 CONF，
     # 這樣 CONF 提高只會讓某些東西整個不算誤判，不會把一個東西拆成兩段、反而多扣分。
@@ -141,7 +150,7 @@ def score(answers: dict, detections: list[list[dict]], conf: float) -> dict:
         for d, gid in zip(dets, gids):
             if d["conf"] >= conf and gid not in flagged:
                 flagged.add(gid)
-                log.append({"frame": i, "time": i, "cls": d["cls"], "kind": FALSE_ALARM, "reaction": None, "penalty": 1})
+                log.append({"frame": i, "time": gap(0, i), "cls": d["cls"], "kind": FALSE_ALARM, "reaction": None, "penalty": 1})
 
     # 每個計分幀的判定：必看的東西看見了是綠、還沒看見是紅（附已經等了幾秒）；誤判是橘
     marked = []
@@ -154,9 +163,9 @@ def score(answers: dict, detections: list[list[dict]], conf: float) -> dict:
             if t["seen"] is not None and t["seen"] <= i:
                 marks.append({"color": "green", "cls": obj["cls"], "box": list(obj["box"])})
             else:
-                marks.append({"color": "red", "cls": obj["cls"], "box": list(obj["box"]), "waiting": i - t["relevant"]})
+                marks.append({"color": "red", "cls": obj["cls"], "box": list(obj["box"]), "waiting": gap(t["relevant"], i)})
         marks += [{"color": "orange", "cls": d["cls"], "box": list(d["box"])} for d in dets if d["conf"] >= conf]
-        marked.append({"frame": i, "time": i, "name": answers["frames"][i]["name"], "marks": marks})
+        marked.append({"frame": i, "time": gap(0, i), "name": answers["frames"][i]["name"], "marks": marks})
 
     log.sort(key=lambda e: e["frame"])
     deducted = sum(e["penalty"] for e in log)
