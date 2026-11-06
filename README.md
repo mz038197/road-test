@@ -52,7 +52,7 @@ uv run road-test-site                 # http://127.0.0.1:8000
 uv run road-test-site --host 0.0.0.0 --port 8080
 ```
 
-`ROAD_TEST_WORKERS`：同時跑幾件（預設 2）；`ROAD_TEST_THREADS`：每個 worker 推論用幾個執行緒（預設 CPU 核心數 ÷ worker 數）。
+`ROAD_TEST_WORKERS`：同時跑幾段偵測（預設 CPU 核心數 ÷ 2）；`ROAD_TEST_THREADS`：每個 worker 推論用幾個執行緒（預設 CPU 核心數 ÷ worker 數）；`ROAD_TEST_IDLE_MINUTES`：沒人連線、也沒有路考在跑幾分鐘後網站自己結束（預設不結束，Fly 上是 10）。
 
 `ROAD_TEST_TEACHER_PASSWORD`：老師密碼（Fly 上放 secrets）。沒設定的話，開關正式路考等老師的功能一律拒絕。
 老師在 `/teacher.html` 輸入老師密碼開關正式路考；開放期間模擬路考暫停收件，排隊中的正式路考先跑。
@@ -107,3 +107,74 @@ uv run make-answers --camvid <CamVid資料夾> --out <答案.json>
 
 `box` 是 `[x1, y1, x2, y2]`，`relevant` 是不是必看。
 
+
+## 部署（Fly.io）
+
+網址：<https://road-test.fly.dev/>。push 到 `main` 就由 GitHub Actions（`.github/workflows/deploy.yml`）跑測試、`flyctl deploy`。也可以在 Actions 頁面按「Run workflow」手動部署。
+
+| 東西 | 在哪裡 |
+|---|---|
+| 程式、前端 | Docker 映像（`Dockerfile`），只有 `pyproject.toml`、`uv.lock`、`src/` |
+| 路考影片、答案、組別代碼、交件、成績、路考紀錄 | volume `road_test_data`（5 GB，東京 nrt），掛在 `/data` = `ROAD_TEST_DATA`。重新部署不會不見 |
+| 老師密碼 | Fly secrets `ROAD_TEST_TEACHER_PASSWORD` |
+| GitHub Actions 部署用的 token | repo secret `FLY_API_TOKEN`（`flyctl tokens create deploy -a road-test`） |
+
+機器：平常 1 台 `performance-4x`（4 個專用 CPU），2 個 worker × 2 個執行緒。沒人連線、也沒有路考在跑，10 分鐘後網站自己結束、機器停下來（按秒計費，停著只收 volume 和映像的儲存費）；有人連進來時 Fly 自動開機，約幾秒。Fly 自己的 auto_stop 是關掉的：它只看連線，學生關掉結果頁時背景還在補幀也會被關掉。
+
+### 常用指令
+
+```powershell
+flyctl deploy                                  # 從本機手動部署（在 repo 根目錄）
+flyctl logs -a road-test                       # 看紀錄
+flyctl machine list -a road-test               # 機器開著還是停著
+flyctl secrets set ROAD_TEST_TEACHER_PASSWORD=新密碼 -a road-test   # 換老師密碼（會重開機）
+flyctl ssh sftp shell -a road-test             # 上傳／下載 volume 上的檔案（put 本機檔 /data/...）
+flyctl ssh console -a road-test                # 進機器
+```
+
+換路考影片或答案：`flyctl ssh sftp shell -a road-test` 後 `put 本機檔 /data/videos/Seq05VD.mp4`，再 `flyctl machine restart -a road-test`（影片幀數是開機時讀的）。正式路考影片 Seq05VD 只放 volume，不進映像、不進 git。
+
+### Fly 上的實測（模擬路考 0006R0，yolo26n 四類測試模型）
+
+`performance-4x`（4 核心）：
+
+| worker × 執行緒 | 每個 worker 每幀 | 整台機器每幀 |
+|---|---|---|
+| 1 × 4 | 52 ms | 52 ms |
+| **2 × 2（預設）** | 79 ms | **39 ms** |
+| 4 × 1 | 130 ms | 33 ms |
+
+交一次模擬路考（2 × 2）：上傳＋檢查 1 秒，**交件 → 成績 13 秒**，交件 → 3931 幀全部補完 169 秒。4 × 1 整台快一點，但成績要等比較久（計分幀只有一個 worker 在跑），所以預設 2 × 2。
+
+`performance-16x`（16 核心）：
+
+| worker × 執行緒 | 整台機器每幀 |
+|---|---|
+| 2 × 8 | 24.5 ms |
+| 4 × 4 | 16.3 ms |
+| **8 × 2（預設）** | **13.0 ms** |
+
+### 正式路考那天：把機器升級成 16 核心
+
+上課前（或開放正式路考前）：
+
+```powershell
+flyctl scale vm performance-16x -a road-test    # 約 10 秒，機器會重開一次
+```
+
+worker 數會跟著核心數自動變成 8 × 2，不用改設定。下課後改回來：
+
+```powershell
+flyctl scale vm performance-4x -a road-test
+```
+
+10 組各交一次正式路考（Seq05VD，5101 幀、171 個計分幀）的預估：
+
+| 機器 | 10 組都拿到成績 | 10 組的每一幀都補完（播放完整） | 費用 |
+|---|---|---|---|
+| performance-4x | 約 2 分鐘 | 10 × 5101 × 39 ms ≈ **34 分鐘** | 平常的價錢 |
+| **performance-16x** | 約 1 分鐘 | 10 × 5101 × 13 ms ≈ **11 分鐘** | 開 2 小時約 1.5 美元 |
+
+不加到 3 台：交件、成績、路考紀錄都在**一台機器的 volume** 上的 SQLite，Fly 的 volume 不能多台共用。多台會各有一份資料，交件落在哪台、查詢就要回哪台，管理頁也看不到全部。升級同一台機器的 CPU 效果一樣（16 核心 ≈ 3.3 倍），資料也不會分散。
+
+注意：`fly.toml` 寫的是 `performance-4x`，**升級期間 push 到 main 的話，部署會把機器改回 4 核心**。正式路考那天不要 push。

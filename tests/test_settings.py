@@ -4,10 +4,10 @@ import pytest
 from road_test.web.settings import from_env
 
 
-def test_defaults_split_cpu_cores_between_two_workers() -> None:
+def test_four_cores_default_to_two_workers_with_two_threads() -> None:
     s = from_env({}, cpu_count=4)
 
-    assert (s.workers, s.threads) == (2, 2), "沒設定時 2 個 worker，4 核心每個 worker 2 個執行緒"
+    assert (s.workers, s.threads) == (2, 2), "沒設定時 4 核心：2 個 worker、每個 2 個執行緒"
     assert s.idle_minutes is None, "本機沒設定閒置時間，網站不會自己關掉"
 
 
@@ -41,3 +41,9 @@ def test_bad_values_stop_with_a_message_naming_the_variable(name: str, value: st
         from_env({name: value}, cpu_count=4)
 
     assert name in str(e.value), f"錯誤訊息要說是哪個環境變數寫錯：{e.value}"
+
+
+def test_bigger_machine_gets_more_workers_without_extra_settings() -> None:
+    s = from_env({}, cpu_count=16)
+
+    assert (s.workers, s.threads) == (8, 2), "正式路考那天升級成 16 核心：不用改設定就變成 8 個 worker × 2 個執行緒"
