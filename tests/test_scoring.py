@@ -174,3 +174,25 @@ def test_log_entries_are_in_settlement_order_and_json_ready() -> None:
     for entry in result["log"]:
         assert set(entry) == {"frame", "time", "cls", "kind", "reaction", "penalty"}, "每條都要有時間、類別、種類、反應時間、扣分"
     assert json.loads(json.dumps(result, ensure_ascii=False)) == result, "輸出要能直接轉成 JSON"
+
+
+def test_two_answer_boxes_in_one_frame_are_two_things_even_if_both_touch_one_box_before() -> None:
+    # 第 0 幀只有一台車；第 1 幀那台車旁邊又冒出一台，兩個框都跟第 0 幀那台重疊
+    beside = [150, 100, 250, 160]
+    answers = _answers([_obj("car", CAR)], [_obj("car", CAR), _obj("car", beside)], [_obj("car", CAR), _obj("car", beside)])
+
+    result = score(answers, [[], [], []], conf=0.35)
+
+    assert result["full"] == 4, "同一幀的兩個框是兩台車，扣滿是 2 + 2 = 4，不能併成一台"
+    assert _count(result, "漏看") == 2, "兩台都沒看見，要各記一次漏看"
+
+
+def test_two_false_alarms_in_one_frame_are_two_even_if_both_touch_one_before() -> None:
+    answers = _answers([], [], [])
+    ghost, beside = [300, 50, 340, 130], [320, 50, 360, 130]
+    detections = [[_det("pedestrian", ghost)], [_det("pedestrian", ghost), _det("pedestrian", beside)],
+                  [_det("pedestrian", ghost), _det("pedestrian", beside)]]
+
+    result = score(answers, detections, conf=0.35)
+
+    assert _count(result, "誤判") == 2, "同一幀兩個誤判框是兩個東西，各扣 1 分"

@@ -45,27 +45,42 @@ def same_object(a, b):
     return math.hypot(ca[0] - cb[0], ca[1] - cb[1]) < size
 
 
+def _center_gap(a, b):
+    ca = ((a[0] + a[2]) / 2, (a[1] + a[3]) / 2)
+    cb = ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2)
+    return math.hypot(ca[0] - cb[0], ca[1] - cb[1])
+
+
+def _pair(prev, boxes):
+    """相鄰兩個計分幀的框一對一配對：same_object 的配對中，重疊越多（IoU 大）、中心越近的先配。
+
+    回傳 {這一幀的框: 前一幀的框}。同一幀的兩個框不會配到同一個框，所以永遠是兩個東西。
+    """
+    pairs = [(-iou(b["box"], a["box"]), _center_gap(b["box"], a["box"]), j, k)
+             for j, b in enumerate(boxes) for k, a in enumerate(prev) if same_object(b, a)]
+    used_now, used_prev, link = set(), set(), {}
+    for _, _, j, k in sorted(pairs):
+        if j not in used_now and k not in used_prev:
+            used_now.add(j)
+            used_prev.add(k)
+            link[j] = k
+    return link
+
+
 def _group(frames):
-    """把每幀的框串成東西：相鄰幀之間是同一個東西就併在一起。回傳每個框所屬東西的編號（跟 frames 同形狀）。"""
-    parent = {}
-
-    def find(k):
-        while parent[k] != k:
-            parent[k] = parent[parent[k]]
-            k = parent[k]
-        return k
-
+    """把每幀的框串成東西：相鄰幀之間一對一配對，配上的是同一個東西。回傳每個框所屬東西的編號（跟 frames 同形狀）。"""
+    ids, count = [], 0
     for i, boxes in enumerate(frames):
+        link = _pair(frames[i - 1], boxes) if i else {}
+        row = []
         for j in range(len(boxes)):
-            parent[(i, j)] = (i, j)
-        if i == 0:
-            continue
-        for j, box in enumerate(boxes):
-            for k, prev in enumerate(frames[i - 1]):
-                if same_object(box, prev):
-                    parent[find((i, j))] = find((i - 1, k))
-    roots = {}
-    return [[roots.setdefault(find((i, j)), len(roots)) for j in range(len(boxes))] for i, boxes in enumerate(frames)]
+            if j in link:
+                row.append(ids[i - 1][link[j]])
+            else:
+                row.append(count)
+                count += 1
+        ids.append(row)
+    return ids
 
 
 def _miss_penalty(cls, reaction):
