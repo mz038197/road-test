@@ -248,5 +248,14 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             raise HTTPException(403, "只能看自己這組的路考紀錄。")
         return [summary(r) for r in store.of_group(group)]
 
-    app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
+    app.mount("/", FrontEnd(directory=STATIC, html=True), name="static")
     return app
+
+
+class FrontEnd(StaticFiles):
+    """前端檔案加 Cache-Control: no-cache：瀏覽器每次用 ETag 問一次有沒有新版（沒改是 304），部署後不會跑舊的 JS。"""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
