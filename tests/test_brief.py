@@ -103,7 +103,10 @@ def test_pages_load_nothing_from_other_sites(client, page: str) -> None:
 
 def test_submission_fields_are_named_after_what_they_ask_for(client) -> None:
     html = client.get("/submit.html").text
-    labels = dict(re.findall(r'<label for="([^"]+)">([^<]+)</label>', html))
+    labels = {
+        target: re.sub(r"<[^>]+>", "", text)  # label 裡面就算有其他標籤，也只看文字
+        for target, text in re.findall(r'<label\b[^>]*\bfor="([^"]+)"[^>]*>(.*?)</label>', html, re.S)
+    }
 
     assert "模型檔" in labels.get("model", ""), f"上傳欄位的名稱要寫「模型檔」：{labels.get('model')}"
     assert "CONF" in labels.get("conf", ""), f"CONF 欄位的名稱要寫「CONF」：{labels.get('conf')}"

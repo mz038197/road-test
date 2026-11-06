@@ -1,26 +1,30 @@
 /* 路考網站的樣式。設計規格：.claude/skills/design-system/SKILL.md（bento：圓角方塊、米色底、桃色重點）。
    顏色、字、間距、尺寸都只用下面的變數。*-ink 是為了文字對比（≥ 4.5:1）加深的版本；--fs-48 是規格外多加的一級，給成績大字。
-   字型不從外站載：學校網路擋外站時頁面會卡住。電腦裝了 Inter／JetBrains Mono 就用，沒有就用系統字（中文一律是系統字）。 */
+   字型用系統字，不從外站載（學校網路擋外站時頁面會卡住），四頁一致。規格寫 Inter，但 Inter 沒有中文，
+   中文本來就是系統字，英文數字也跟著用系統字。 */
 :root {
-  /* 規格色 */
-  --primary: #FAD4C0; --secondary: #80A1C1; --success: #16A34A; --warning: #D97706; --danger: #DC2626;
-  --surface: #FFF5E6; --text: #111827;
-  /* 衍生 */
-  --tile: #FFFFFF; --line: #EADFCC; --muted: #4B5563; --on-primary: #111827; --on-warning: #111827; --on-danger: #FFFFFF;
-  --secondary-ink: #3E5F80; --danger-ink: #B91C1C; --warning-ink: #92400E; --success-ink: #15803D;
-  /* 深色模式的色值只寫在這裡：深色模式和全螢幕播放器（固定深色）都用這一組 */
-  --dark-primary: #5A3A2C; --dark-on-primary: #FFE9DC; --dark-surface: #15120F; --dark-tile: #211C18;
-  --dark-line: #3A322B; --dark-text: #F3EEE8; --dark-muted: #B5ADA4; --dark-secondary-ink: #A9C3DC;
-  --dark-danger-ink: #FF8A8A; --dark-warning-ink: #F6B663; --dark-success-ink: #6FD39A;
+  /* 淺色、深色跟著系統；全螢幕播放器自己設成 dark（見下面 .player:fullscreen） */
+  color-scheme: light dark;
+  /* 顏色：light-dark(淺色, 深色)。每個顏色只寫這一次，深色模式和全螢幕播放器都從這裡拿 */
+  --primary: light-dark(#FAD4C0, #5A3A2C); --secondary: #80A1C1; --success: #16A34A; --warning: #D97706; --danger: #DC2626;
+  --surface: light-dark(#FFF5E6, #15120F); --text: light-dark(#111827, #F3EEE8);
+  --tile: light-dark(#FFFFFF, #211C18); --line: light-dark(#EADFCC, #3A322B); --muted: light-dark(#4B5563, #B5ADA4);
+  --on-primary: light-dark(#111827, #FFE9DC); --on-warning: #111827; --on-danger: #FFFFFF;
+  --secondary-ink: light-dark(#3E5F80, #A9C3DC); --danger-ink: light-dark(#B91C1C, #FF8A8A);
+  --warning-ink: light-dark(#92400E, #F6B663); --success-ink: light-dark(#15803D, #6FD39A);
   --stage: #000000;  /* 影片底色，淺色深色都一樣 */
   /* 字 */
-  --font: Inter, "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --font: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
+  --mono: ui-monospace, Consolas, "Courier New", monospace;
   --fs-12: 12px; --fs-14: 14px; --fs-16: 16px; --fs-20: 20px; --fs-24: 24px; --fs-32: 32px; --fs-48: 48px;
+  --code-size: .92em;  /* 程式碼跟著外面的字大小，稍微小一點 */
   /* 間距、圓角、線 */
-  --s-4: 4px; --s-8: 8px; --s-12: 12px; --s-16: 16px; --s-24: 24px; --s-32: 32px; --s-64: calc(var(--s-32) * 2);
+  --s-4: 4px; --s-8: 8px; --s-12: 12px; --s-16: 16px; --s-24: 24px; --s-32: 32px;
   --radius: 16px; --radius-sm: 8px; --radius-xs: 4px; --pill: 999px;
-  --rule: 1px; --rule-strong: 2px; --rule-accent: 6px; --focus-ring: 3px;
+  --rule: 1px; --rule-strong: 2px; --rule-accent: 6px;
+  --focus-ring: 3px; --focus-offset: 2px; --underline-offset: 3px;
+  --lift: -1px;  /* 按鈕滑過時往上浮的距離 */
+  --progress-height: 10px; --check-offset: 5px;  /* 勾選框往下移，跟第一行字對齊 */
   /* 元件尺寸 */
   --nav-width: 240px; --step-num: 56px; --step-num-sm: 40px; --nav-num: 28px; --nav-num-sm: 24px; --check: 18px;
   --page: 760px; --page-steps: 1120px; --page-admin: 1000px; --page-wide: 1320px;
@@ -28,30 +32,23 @@
   --slider-min: 240px; --slider-max: 480px; --seek-min: 160px;
   /* 斷點（@media 裡不能用變數，寫死在下面）：步驟版面 860px、播放器 900px */
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --primary: var(--dark-primary); --on-primary: var(--dark-on-primary); --surface: var(--dark-surface);
-    --tile: var(--dark-tile); --line: var(--dark-line); --text: var(--dark-text); --muted: var(--dark-muted);
-    --secondary-ink: var(--dark-secondary-ink); --danger-ink: var(--dark-danger-ink);
-    --warning-ink: var(--dark-warning-ink); --success-ink: var(--dark-success-ink);
-  }
-}
 
 /* ---- 基本 ---- */
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--surface); color: var(--text); font: var(--fs-16)/1.6 var(--font); }
-main { max-width: var(--page); margin: 0 auto; padding: var(--s-32) var(--s-16) var(--s-64); }
+main { max-width: var(--page); margin: 0 auto; padding: var(--s-32) var(--s-16); }
+main > :last-child { margin-bottom: var(--s-32); }  /* 頁尾多留一段：padding 加這段共兩個 32 */
 h1 { font-size: var(--fs-32); line-height: 1.2; font-weight: 800; letter-spacing: -.01em; margin: 0 0 var(--s-4); }
 h2 { font-size: var(--fs-20); font-weight: 700; margin: 0 0 var(--s-12); }
 h3 { font-size: var(--fs-16); font-weight: 700; margin: var(--s-16) 0 var(--s-8); }
 p { margin: 0 0 var(--s-8); }
 ul, ol { margin: 0 0 var(--s-8); padding-left: var(--s-24); }
 li + li { margin-top: var(--s-4); }
-a { color: var(--secondary-ink); text-underline-offset: var(--focus-ring); }
-code { font: 500 var(--fs-14) var(--mono); background: var(--surface); border: var(--rule) solid var(--line);
+a { color: var(--secondary-ink); text-underline-offset: var(--underline-offset); }
+code { font: 500 var(--code-size) var(--mono); background: var(--surface); border: var(--rule) solid var(--line);
        padding: 0 var(--s-4); border-radius: var(--radius-xs); }
-:focus-visible { outline: var(--focus-ring) solid var(--secondary-ink); outline-offset: var(--rule-strong); }
+:focus-visible { outline: var(--focus-ring) solid var(--secondary-ink); outline-offset: var(--focus-offset); }
 .muted { color: var(--muted); }
 .lead { font-size: var(--fs-20); font-weight: 500; margin: 0 0 var(--s-8); }
 .eyebrow { font-size: var(--fs-12); font-weight: 700; letter-spacing: .08em; color: var(--muted);
@@ -83,7 +80,7 @@ label.inline { display: inline-flex; gap: var(--s-8); align-items: center; font-
 label.confirm { display: flex; gap: var(--s-8); align-items: flex-start; margin-top: var(--s-16);
   padding: var(--s-12) var(--s-16); border-radius: var(--radius-sm); font-weight: 700; font-size: var(--fs-16);
   background: color-mix(in srgb, var(--warning) 18%, var(--tile)); }
-label.confirm input { margin-top: var(--s-4); width: var(--check); height: var(--check); flex: none; accent-color: var(--text); }
+label.confirm input { margin-top: var(--check-offset); width: var(--check); height: var(--check); flex: none; accent-color: var(--text); }
 
 /* 模擬／正式：膠囊按鈕（還是 radio，鍵盤照常用方向鍵選） */
 fieldset.kinds { border: 0; padding: 0; margin: 0; }
@@ -93,7 +90,7 @@ fieldset.kinds label.inline { position: relative; margin: 0 var(--s-8) var(--s-8
 fieldset.kinds input { position: absolute; opacity: 0; pointer-events: none; }
 fieldset.kinds label:has(input:checked) { background: var(--text); color: var(--surface); }
 fieldset.kinds label:has(input:disabled) { opacity: .45; border-style: dashed; cursor: not-allowed; }
-fieldset.kinds label:has(input:focus-visible) { outline: var(--focus-ring) solid var(--secondary-ink); outline-offset: var(--rule-strong); }
+fieldset.kinds label:has(input:focus-visible) { outline: var(--focus-ring) solid var(--secondary-ink); outline-offset: var(--focus-offset); }
 fieldset.kinds p { font-size: var(--fs-14); margin: 0; }
 
 /* ---- 按鈕 ---- */
@@ -101,7 +98,7 @@ button, a.button { display: inline-flex; align-items: center; justify-content: c
   margin-top: var(--s-16); padding: var(--s-12) var(--s-24); border: var(--rule-strong) solid var(--text); border-radius: var(--pill);
   background: var(--text); color: var(--surface); font-weight: 700; line-height: 1.2; text-decoration: none; cursor: pointer; }
 a.button { margin-top: 0; }
-button:hover:not(:disabled), a.button:hover { transform: translateY(calc(var(--rule) * -1)); box-shadow: 0 var(--s-4) 0 var(--secondary); }
+button:hover:not(:disabled), a.button:hover { transform: translateY(var(--lift)); box-shadow: 0 var(--s-4) 0 var(--secondary); }
 button:active:not(:disabled), a.button:active { transform: none; box-shadow: none; }
 button:disabled { opacity: .5; cursor: default; }
 button.secondary, a.button.secondary { background: transparent; color: var(--text); }
@@ -133,7 +130,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tbody tr:hover { background: var(--surface); }
 .records td.num:last-child { font-size: var(--fs-20); font-weight: 800; }
 .score { font-size: var(--fs-48); font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
-progress { width: 100%; height: var(--s-8); accent-color: var(--text); }
+progress { width: 100%; height: var(--progress-height); accent-color: var(--text); }
 
 /* ---- 步驟版面（委託頁、交件頁）：左邊步驟導覽，右邊每一步一張方塊 ---- */
 body.steps-page main { max-width: var(--page-steps); }
@@ -194,11 +191,9 @@ body.wide main { max-width: var(--page-wide); }
 .conf-slider p { flex-basis: 100%; margin: 0; }
 .player { display: grid; grid-template-columns: minmax(0, 1fr) var(--panel-width); grid-template-rows: auto auto;
           gap: var(--s-12); margin: var(--s-16) 0; outline: none; }
-/* 全螢幕給全班看：固定黑底、深色方塊，不跟著淺色／深色模式走 */
-.player:fullscreen { background: var(--stage); padding: var(--s-12); grid-template-rows: minmax(0, 1fr) auto;
-                     --tile: var(--dark-tile); --line: var(--dark-line); --muted: var(--dark-muted);
-                     --text: var(--dark-text); --surface: var(--dark-surface); --danger-ink: var(--dark-danger-ink);
-                     --warning-ink: var(--dark-warning-ink); color: var(--text); }
+/* 全螢幕給全班看：固定黑底、整組深色（color-scheme: dark 讓每個 light-dark() 都取深色那個值，焦點框也是） */
+.player:fullscreen { color-scheme: dark; background: var(--stage); color: var(--text); padding: var(--s-12);
+                     grid-template-rows: minmax(0, 1fr) auto; }
 .stage { position: relative; background: var(--stage); border-radius: var(--radius); overflow: hidden; min-height: 0;
          aspect-ratio: 4 / 3; align-self: start; justify-self: center;
          width: min(100%, calc((100vh - var(--controls-room)) * 4 / 3)); }  /* 控制列要留在螢幕裡 */
