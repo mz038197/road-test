@@ -1,6 +1,6 @@
 # 路考
 
-卷積神經網路的委託。學生在路考網站上接委託、下載訓練影片、交模型、看路考播放。其他三份委託、實驗夾與實驗本在 [Machine-Learning-Lab](https://github.com/mz038197/Machine-Learning-Lab)，術語見那邊的 `CONTEXT.md`。
+卷積神經網路的委託。學生在路考網站上接委託、下載訓練影片、交模型、看路考播放。其他三份委託、實驗夾與實驗本在 [Machine-Learning-Lab](https://github.com/mz038197/Machine-Learning-Lab)（那邊的 `CONTEXT.md` 是那些章節的術語）；路考的術語都在本檔下面。
 
 為什麼拆成獨立的 repo：見 Machine-Learning-Lab 的 [ADR-0001：路考拆成獨立專案，委託放在路考網站上](https://github.com/mz038197/Machine-Learning-Lab/blob/main/docs/adr/0001-road-test-own-repo.md)。路考網站 push 就自動部署，拆開之後改其他章節不會觸發部署；路考的程式不 import Machine-Learning-Lab 的東西。
 
