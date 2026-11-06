@@ -18,13 +18,15 @@ src/road_test/      Python 套件，網站和老師工具都從這裡 import
     results.py      偵測框 → 成績（加上影片幀號）
     main.py         road-test-site 啟動指令
     static/         前端：純 HTML、JS、CSS
+      playback.js   結果頁播放的計算（時間 ↔ 幀號、某一幀的判定、考官紀錄、分數），有 node 測試
+      player.js     播放器：<video> 疊 canvas、播放控制、考官紀錄
 scripts/            老師一次性的腳本
   align_video.py    比對影片和標註，找出位移
   overlay_answers.py  答案框疊在路考影片上，目視檢查
 student/            發給學生的訓練程式
   train_yolo.py           本機版
   train_yolo_colab.ipynb  Colab 版
-tests/              pytest
+tests/              pytest；tests/js/ 是前端的 node --test
 docs/alignment.md   兩場路考的影片怎麼對齊、怎麼轉成 MP4
 ```
 
@@ -33,6 +35,7 @@ docs/alignment.md   兩場路考的影片怎麼對齊、怎麼轉成 MP4
 ```powershell
 uv sync
 uv run pytest
+node --test "tests/js/*.test.js"   # 前端播放邏輯（Node 18 以上）
 ```
 
 學生訓練程式要用 ultralytics，裝起來很大，另外放在 `train` 群組：

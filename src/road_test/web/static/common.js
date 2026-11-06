@@ -13,11 +13,16 @@ function saveGroup(group, code) {
   try { localStorage.setItem("road-test-group", JSON.stringify({ group, code })); } catch { /* 無痕視窗存不了，沒關係 */ }
 }
 
-// 呼叫 API；帶上記住的組別和組別代碼。失敗時丟出伺服器給的中文原因
-async function api(path, options = {}) {
+// 呼叫 API 時帶的身分標頭：目前是記住的組別和組別代碼。
+// #10 老師登入後，讓這裡改回傳老師密碼的標頭，結果頁（result.html）不用改就能給老師播任一組。
+function authHeaders() {
   const { group, code } = loadGroup();
-  const headers = { ...(options.headers || {}) };
-  if (group) { headers["X-Group"] = group; headers["X-Group-Code"] = code || ""; }
+  return group ? { "X-Group": group, "X-Group-Code": code || "" } : {};
+}
+
+// 呼叫 API；帶上 authHeaders()。失敗時丟出伺服器給的中文原因
+async function api(path, options = {}) {
+  const headers = { ...authHeaders(), ...(options.headers || {}) };
   const response = await fetch(path, { ...options, headers });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
