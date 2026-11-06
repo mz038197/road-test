@@ -1,6 +1,6 @@
 """把答案框疊在路考 MP4 的計分幀上，目視檢查框有沒有偏（老師準備路考資料時跑一次）
 
-用法：uv run python -P scripts/overlay_answers.py <路考.mp4> <答案.json> <輸出.png> [--frames 930 2430 ...]
+用法：uv run python scripts/overlay_answers.py <路考.mp4> <答案.json> <輸出.png> [--frames 930 2430 ...]
 綠框是必看，灰框是非必看。沒給 --frames 就挑開頭、結尾，和必看最多的兩幀，拼成 2×2。
 """
 import argparse

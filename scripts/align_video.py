@@ -1,6 +1,6 @@
 """找出每一張 CamVid 標註對上影片的哪一幀（老師準備路考資料時跑一次）
 
-用法：uv run python -P scripts/align_video.py <影片> --sequence 0006R0 [--camvid DIR] [--csv 結果.csv]
+用法：uv run python scripts/align_video.py <影片> --sequence 0006R0 [--camvid DIR] [--csv 結果.csv]
 
 1. 整支影片縮到 96×72 灰階，用相關係數替每張標註原圖找候選幀。
 2. 再把候選幀前後幾幀縮到 480×360，跟原圖比平均像素差，挑最小的那幀。

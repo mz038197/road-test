@@ -18,7 +18,7 @@ make-answers = "road_test.answers:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
-# 學生訓練程式、舊的 cv2 播放程式才要；裝起來很大，平常不裝
+# 學生訓練程式才要；裝起來很大，平常不裝
 train = ["ultralytics>=8.3", "onnx", "onnxruntime", "onnxslim"]
 
 [tool.setuptools.packages.find]

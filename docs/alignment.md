@@ -12,10 +12,8 @@ CamVid 的標註每秒一張（標註幀號間隔 30），檔名是 `<段落>_f<
 4. 車子停住時前後幾幀幾乎一樣，分不出是哪一幀。這種標註不投票；照位移取哪一幀畫面都一樣。
 
 ```powershell
-uv run python -P scripts/align_video.py <影片> --sequence 0006R0 --csv docs/alignment/0006R0-MXF.csv
+uv run python scripts/align_video.py <影片> --sequence 0006R0 --csv docs/alignment/0006R0-MXF.csv
 ```
-
-（`-P`：不然 `scripts/road_test.py` 會蓋掉 `road_test` 套件。）
 
 ## 結果
 
@@ -45,7 +43,7 @@ ffmpeg -i 0006R0.MXF -map 0:v:0 -vf "trim=start_frame=1:end_frame=3932,setpts=PT
 ## 答案框的目視檢查
 
 ```powershell
-uv run python -P scripts/overlay_answers.py <路考.mp4> $env:ROAD_TEST_DATA\answers\0006R0.json 對照圖.png
+uv run python scripts/overlay_answers.py <路考.mp4> $env:ROAD_TEST_DATA\answers\0006R0.json 對照圖.png
 ```
 
 綠框是必看，灰框是非必看。兩場路考都檢查過：0006R0 的第 930、3270、3300、3930 幀，Seq05VD 的第 0、1200、3600、5100 幀，框都貼著東西，沒有偏移。
