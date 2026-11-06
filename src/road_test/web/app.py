@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -21,9 +21,10 @@ from pydantic import BaseModel, Field
 from road_test import paths
 from road_test.detector import CLASSES, Detector, ModelRejected
 from road_test.web.groups import GroupCodes
+from road_test.web.limiter import FailureLimit
 from road_test.web.results import score_result
 from road_test.web.store import Busy, NoFinalLeft, Store
-from road_test.web.teacher import is_teacher, teacher_check
+from road_test.web.teacher import TARGET as TEACHER_TARGET, is_teacher, teacher_check
 from road_test.web.worker import Worker
 
 STATIC = Path(__file__).parent / "static"
@@ -94,7 +95,8 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     app = FastAPI(title="路考網站", lifespan=lifespan)
     app.state.store = store
     app.state.worker = worker
-    teacher = teacher_check(teacher_password)
+    guesses = FailureLimit(clock)  # 組別代碼、老師密碼猜錯太多次就暫時 429
+    teacher = teacher_check(teacher_password, guesses)
 
     def final_open() -> bool:
         return bool(store.setting("final_open", False))
@@ -118,16 +120,22 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
 
     codes = GroupCodes(data_dir / "groups.json")  # 組別代碼，管理頁產生、重設（見 groups.py）
 
-    def check_code(group: str, code: str) -> None:
+    def check_code(request: Request, group: str, code: str) -> None:
+        target = f"group:{group}"
+        guesses.check(request, target)
         if not codes.matches(group, code):
+            guesses.failed(request, target)
             raise HTTPException(403, "組別代碼不對，請跟老師確認你們這組的組別代碼。")
 
-    def viewer(x_group: str | None = Header(None), x_group_code: str | None = Header(None),
+    def viewer(request: Request, x_group: str | None = Header(None), x_group_code: str | None = Header(None),
                x_teacher_password: str | None = Header(None)) -> Viewer:
         """帶老師密碼的是老師（看得到全部，管理頁播放任一組用），不然要帶對的組別代碼。"""
-        if is_teacher(teacher_password, x_teacher_password):
-            return Viewer(None, teacher=True)
-        check_code(x_group or "", x_group_code or "")
+        if teacher_password and x_teacher_password:
+            guesses.check(request, TEACHER_TARGET)
+            if is_teacher(teacher_password, x_teacher_password):
+                return Viewer(None, teacher=True)
+            guesses.failed(request, TEACHER_TARGET)
+        check_code(request, x_group or "", x_group_code or "")
         return Viewer(group=x_group)
 
     def visible(sid: int, who: Viewer):
@@ -171,10 +179,10 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         return road_test_state()
 
     @app.post("/api/submissions", status_code=201)
-    def submit(group: str = Form(), code: str = Form(), kind: str = Form("mock"),
+    def submit(request: Request, group: str = Form(), code: str = Form(), kind: str = Form("mock"),
                conf: float = Form(0.35), confirm: bool = Form(False), model: UploadFile = File()):
         """交件。正式路考要 confirm=true（學生確認了「交了就不能重交」），交出的 CONF 就鎖定。"""
-        check_code(group, code)
+        check_code(request, group, code)
         if kind not in road_tests:
             raise HTTPException(400, f"{KIND_NAMES.get(kind, kind)}目前沒有開放。")
         # 以收到交件的時間為準：開關在這一刻是什麼就照什麼，收下之後老師再關也照樣跑完

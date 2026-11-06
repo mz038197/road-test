@@ -11,7 +11,7 @@
 import hmac
 import os
 
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Request
 
 ENV = "ROAD_TEST_TEACHER_PASSWORD"
 HEADER = "X-Teacher-Password"
@@ -27,14 +27,21 @@ def is_teacher(password: str | None, given: str | None) -> bool:
     return hmac.compare_digest(password.encode(), given.encode())
 
 
-def teacher_check(password: str | None):
-    """FastAPI 依賴：老師密碼不對就 403。"""
+TARGET = "teacher"  # 猜錯次數限制（limiter.FailureLimit）裡老師密碼的目標名稱
 
-    def check(x_teacher_password: str | None = Header(None)) -> None:
+
+def teacher_check(password: str | None, limit=None):
+    """FastAPI 依賴：老師密碼不對就 403；limit（limiter.FailureLimit）：猜錯太多次就 429。"""
+
+    def check(request: Request, x_teacher_password: str | None = Header(None)) -> None:
         if not password:
             raise HTTPException(403, "伺服器沒有設定老師密碼，老師的功能暫時不能用。請在 Fly secrets 設定 "
                                      f"{ENV}。")
+        if limit:
+            limit.check(request, TARGET)
         if not is_teacher(password, x_teacher_password):
+            if limit:
+                limit.failed(request, TARGET)
             raise HTTPException(403, "老師密碼不對。")
 
     return check
