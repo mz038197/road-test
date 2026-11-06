@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "road-test"
+version = "0.1.0"
+description = "卷積神經網路的路考網站：答案產生、計分、交件與播放。"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2",
+    "pillow>=11",
+    "scipy>=1.14",
+]
+
+[project.scripts]
+make-answers = "road_test.answers:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+# 學生訓練程式、舊的 cv2 播放程式才要；裝起來很大，平常不裝
+train = ["ultralytics>=8.3", "onnx", "onnxruntime", "onnxslim"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

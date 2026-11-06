@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# 路考資料：一律放在 repo 外，用 ROAD_TEST_DATA 指過去。萬一放進來也不能進 git。
+/data/
+answers/
+# 路考影片、訓練影片
+*.mp4
+*.avi
+*.mov
+*.mkv
+# 交件（學生的模型）與訓練產物
+submissions/
+*.onnx
+*.pt
+runs/
+dataset/
+# 結果、路考紀錄、組別代碼、老師密碼
+results/
+路考結果/
+*.sqlite
+*.db
+.env
+.env.*
