@@ -22,6 +22,13 @@
   <section class="card" id="score-card" hidden>
     <span class="muted">成績</span> <span class="score" id="score"></span>
     <span class="muted" id="score-detail"></span>
+    <div class="conf-slider" id="conf-slider" hidden>
+      <label for="conf">CONF <output id="conf-value"></output></label>
+      <input type="range" id="conf" min="0.05" max="1" step="0.01">
+      <button type="button" id="conf-reset" hidden>回到交件的 CONF</button>
+      <p class="muted">拖拖看：CONF 調低，漏看變少、誤判變多。這只是試算，不重新排隊，交件的成績不會變。</p>
+      <p class="error" id="conf-error" role="alert"></p>
+    </div>
   </section>
 
   <section id="player"></section>
