@@ -8,12 +8,16 @@
 src/road_test/      Python 套件，網站和老師工具都從這裡 import
   paths.py          資料夾（讀環境變數）
   answers.py        從 CamVid 標註圖產生路考答案（make-answers）
+  alignment.py      影片幀和標註幀怎麼對齊的判斷規則
 scripts/            老師一次性的腳本
+  align_video.py    比對影片和標註，找出位移
+  overlay_answers.py  答案框疊在路考影片上，目視檢查
   road_test.py      舊的計分＋cv2 播放；計分模組完成後刪掉
 student/            發給學生的訓練程式
   train_yolo.py           本機版
   train_yolo_colab.ipynb  Colab 版
 tests/              pytest
+docs/alignment.md   兩場路考的影片怎麼對齊、怎麼轉成 MP4
 ```
 
 ## 安裝與測試
@@ -35,8 +39,21 @@ uv sync --group train
 
 | 環境變數 | 內容 | 誰用 |
 |---|---|---|
-| `ROAD_TEST_DATA` | 路考資料夾：路考影片、答案（`answers/`）、交件、結果、組別代碼。部署時就是 Fly 的 volume。 | 網站、老師 |
-| `CAMVID_DIR` | CamVid（SegNet 版 480×360）資料夾，裡面有 `testannot/`。 | 只有產生答案時 |
+| `ROAD_TEST_DATA` | 路考資料夾：路考影片、答案、交件、結果、組別代碼。部署時就是 Fly 的 volume。 | 網站、老師 |
+| `CAMVID_DIR` | CamVid（SegNet 版 480×360）資料夾，裡面有 `train/`、`trainannot/`、`test/`、`testannot/`。 | 只有產生答案、對齊影片時 |
+
+路考資料夾的佈局：
+
+```
+$ROAD_TEST_DATA/
+  videos/Seq05VD.mp4   正式路考，960×720，5101 幀
+  videos/0006R0.mp4    模擬路考，960×720，3931 幀
+  videos/0016E5.mp4    訓練影片
+  answers/Seq05VD.json 正式路考的答案（171 個計分幀）
+  answers/0006R0.json  模擬路考的答案（101 個計分幀）
+```
+
+兩支路考 MP4 都剪成「第 n 幀就是標註 f(n)」，見 `docs/alignment.md`。原始影片（MXF）和 MP4 的備份在老師的 Google Drive `影像資料集/CamVid/raw_video`。
 
 PowerShell：
 
@@ -49,9 +66,19 @@ $env:ROAD_TEST_DATA = "D:\road-test-data"
 
 ```powershell
 uv run make-answers                      # 正式路考 Seq05VD，存到 $env:ROAD_TEST_DATA\answers\Seq05VD.json
-uv run make-answers --sequence 0006R0    # 其他段街道
+uv run make-answers --sequence 0006R0    # 模擬路考
 uv run make-answers --camvid <CamVid資料夾> --out <答案.json>
 ```
+
+答案的座標是路考影片的 960×720（標註圖的座標乘 2），每個計分幀帶著它在 MP4 的幀號：
+
+```json
+{"sequence": "0006R0", "width": 960, "height": 720, "fps": 29.97,
+ "frames": [{"name": "0006R0_f00930.png", "frame": 930,
+             "objects": [{"cls": "sign", "box": [788, 300, 804, 334], "relevant": true}]}]}
+```
+
+`box` 是 `[x1, y1, x2, y2]`，`relevant` 是不是必看。
 
 ## 舊的路考程式
 

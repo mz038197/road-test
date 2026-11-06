@@ -36,8 +36,34 @@ def test_writes_answers_for_the_sequence(tmp_path: Path) -> None:
     assert answers["sequence"] == "Seq05VD"
     assert [f["name"] for f in answers["frames"]] == ["Seq05VD_f00001.png", "Seq05VD_f00031.png"], "只能收這一段街道的標註圖"
     objects = answers["frames"][0]["objects"]
-    assert {"cls": "car", "box": [50, 100, 150, 160], "relevant": True} in objects, "近的車應該是必看"
-    assert {"cls": "pedestrian", "box": [300, 200, 303, 205], "relevant": False} in objects, "遠的小行人不應該是必看"
+    assert {"cls": "car", "box": [100, 200, 300, 320], "relevant": True} in objects, "近的車應該是必看，座標要換成 960×720"
+    assert {"cls": "pedestrian", "box": [600, 400, 606, 410], "relevant": False} in objects, "遠的小行人不應該是必看"
+
+
+def test_answers_are_in_video_size_with_frame_numbers(tmp_path: Path) -> None:
+    out = tmp_path / "Seq05VD.json"
+
+    main(["--camvid", str(_camvid(tmp_path)), "--out", str(out)])
+
+    answers = _read(out)
+    assert (answers["width"], answers["height"]) == (960, 720), "答案要用路考影片的大小 960×720"
+    assert answers["fps"] == 29.97
+    assert [f["frame"] for f in answers["frames"]] == [1, 31], "MP4 第 n 幀就是標註 f(n)，frame 要等於標註幀號"
+
+
+def test_finds_a_sequence_in_the_training_split(tmp_path: Path) -> None:
+    camvid = tmp_path / "CamVid"
+    (camvid / "trainannot").mkdir(parents=True)
+    mask = np.zeros((360, 480), dtype=np.uint8)
+    mask[10:50, 10:40] = CAR
+    for n in (960, 930):
+        Image.fromarray(mask).save(camvid / "trainannot" / f"0006R0_f{n:05d}.png")
+    out = tmp_path / "0006R0.json"
+
+    main(["--camvid", str(camvid), "--out", str(out), "--sequence", "0006R0"])
+
+    frames = _read(out)["frames"]
+    assert [f["frame"] for f in frames] == [930, 960], "模擬路考 0006R0 的標註在 trainannot，要找得到，而且照幀號排"
 
 
 def test_reads_folders_from_environment_variables(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

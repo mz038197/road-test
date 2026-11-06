@@ -19,6 +19,11 @@ def answers_dir() -> Path:
     return data_dir() / "answers"
 
 
+def videos_dir() -> Path:
+    """路考影片（Seq05VD.mp4、0006R0.mp4）和訓練影片（0016E5.mp4）。MP4 第 n 幀就是標註 f(n)。"""
+    return data_dir() / "videos"
+
+
 def camvid_dir() -> Path:
     """CamVid（SegNet 版 480×360）資料夾，只有老師產生答案時用得到。"""
     return _from_env("CAMVID_DIR", "CamVid 資料夾")
