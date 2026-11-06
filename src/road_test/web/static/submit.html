@@ -4,7 +4,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>交件｜路考網站</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="steps-page">
@@ -19,20 +18,20 @@
   <div class="steps-layout">
     <nav class="card step-nav" aria-label="交件步驟">
       <ol>
-        <li><a href="#step-kind"><span class="n">1</span>選路考</a></li>
-        <li><a href="#step-group"><span class="n">2</span>組別與組別代碼</a></li>
-        <li><a href="#step-model"><span class="n">3</span>模型檔</a></li>
-        <li><a href="#step-conf"><span class="n">4</span>CONF</a></li>
-        <li><a href="#step-send"><span class="n">5</span>交件</a></li>
-        <li><a href="#records-card"><span class="n">≡</span>路考紀錄</a></li>
+        <li><a href="#step-kind"><span class="step-num" aria-hidden="true">1</span>選路考</a></li>
+        <li><a href="#step-group"><span class="step-num" aria-hidden="true">2</span>組別與組別代碼</a></li>
+        <li><a href="#step-model"><span class="step-num" aria-hidden="true">3</span>模型檔</a></li>
+        <li><a href="#step-conf"><span class="step-num" aria-hidden="true">4</span>CONF</a></li>
+        <li><a href="#step-send"><span class="step-num" aria-hidden="true">5</span>交件</a></li>
+        <li><a href="#records-card"><span class="step-num" aria-hidden="true">≡</span>路考紀錄</a></li>
       </ol>
     </nav>
 
-    <div class="step-list">
+    <div class="step-column">
       <form id="submit" class="step-list">
         <section class="card step" id="step-kind">
-          <div class="n" aria-hidden="true">1</div>
-          <div class="body">
+          <div class="step-num" aria-hidden="true">1</div>
+          <div class="step-body">
             <h2>選路考</h2>
             <fieldset class="kinds">
               <legend>路考</legend>
@@ -44,8 +43,8 @@
         </section>
 
         <section class="card step" id="step-group">
-          <div class="n" aria-hidden="true">2</div>
-          <div class="body">
+          <div class="step-num" aria-hidden="true">2</div>
+          <div class="step-body">
             <h2>組別與組別代碼</h2>
             <div class="pair">
               <div>
@@ -62,33 +61,33 @@
         </section>
 
         <section class="card step" id="step-model">
-          <div class="n" aria-hidden="true">3</div>
-          <div class="body">
+          <div class="step-num" aria-hidden="true">3</div>
+          <div class="step-body">
             <h2>模型檔</h2>
-            <label for="model">訓練程式匯出的 .onnx，檔名不拘</label>
+            <label for="model">模型檔（訓練程式匯出的 .onnx，檔名不拘）</label>
             <input id="model" name="model" type="file" accept=".onnx" required>
           </div>
         </section>
 
         <section class="card step" id="step-conf">
-          <div class="n" aria-hidden="true">4</div>
-          <div class="body">
+          <div class="step-num" aria-hidden="true">4</div>
+          <div class="step-body">
             <h2>CONF</h2>
-            <label for="conf">信心門檻，0.05～1</label>
+            <label for="conf">CONF（信心門檻，0.05～1）</label>
             <input id="conf" name="conf" type="number" min="0.05" max="1" step="0.05" value="0.35" required>
             <p class="muted" id="conf-hint">模擬路考的 CONF 交了之後還可以在結果頁調整。</p>
           </div>
         </section>
 
         <section class="card step" id="step-send">
-          <div class="n" aria-hidden="true">5</div>
-          <div class="body">
+          <div class="step-num" aria-hidden="true">5</div>
+          <div class="step-body">
             <h2>交件</h2>
             <label class="inline confirm" id="confirm-row" hidden>
               <input type="checkbox" name="confirm" value="true" id="confirm">
               我知道正式路考每組只能交一次，交了就不能重交，CONF 也不能再改。
             </label>
-            <button type="submit" class="wide">交件</button>
+            <button type="submit" class="full-width">交件</button>
             <p id="submit-error" class="error" role="alert"></p>
           </div>
         </section>
@@ -123,5 +122,6 @@
 </main>
 <script src="common.js"></script>
 <script src="submit.js"></script>
+<script src="step-nav.js"></script>
 </body>
 </html>

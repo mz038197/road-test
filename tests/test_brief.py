@@ -88,6 +88,22 @@ def test_step_navigation_jumps_to_each_step(client, page: str) -> None:
     anchors = re.findall(r'href="#([^"]+)"', html)
     ids = set(re.findall(r'\bid="([^"]+)"', html))
 
-    assert anchors, f"{page} 左邊要有步驟導覽（連到頁內每一步）"
+    assert anchors, f"{page} 要有步驟導覽（連到頁內每一步）"
     missing = [a for a in anchors if a not in ids]
     assert not missing, f"{page} 的步驟導覽連到不存在的地方：{missing}"
+
+
+@pytest.mark.parametrize("page", ["/", "/submit.html", "/result.html", "/teacher.html"])
+def test_pages_load_nothing_from_other_sites(client, page: str) -> None:
+    html = client.get(page).text
+    external = re.findall(r'<(?:link|script)[^>]+(?:href|src)="(https?://[^"]+)"', html)
+
+    assert not external, f"{page} 不要從外站載字型或程式，學校網路擋外站時會卡住：{external}"
+
+
+def test_submission_fields_are_named_after_what_they_ask_for(client) -> None:
+    html = client.get("/submit.html").text
+    labels = dict(re.findall(r'<label for="([^"]+)">([^<]+)</label>', html))
+
+    assert "模型檔" in labels.get("model", ""), f"上傳欄位的名稱要寫「模型檔」：{labels.get('model')}"
+    assert "CONF" in labels.get("conf", ""), f"CONF 欄位的名稱要寫「CONF」：{labels.get('conf')}"
