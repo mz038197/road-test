@@ -92,10 +92,14 @@ When generating design-system guidance, use this structure:
   - `#80A1C1`（secondary）只用在框線和裝飾，不用在文字上。
   - 桃色 primary 上面一律放深色字。
 - 深色模式用 CSS `light-dark()`，淺色深色的值各寫一次。不支援的舊瀏覽器停在淺色版；全螢幕播放器在那裡改用淺色底。
-- 不在 4/8/12/16/24/32 級距裡、但允許的小數值。各自有自己的變數，不借用間距變數：
+- 不在 4/8/12/16/24/32 級距裡、但允許的數值。各自有自己的變數，不借用間距變數：
+  - 頁尾多留的一段 64px（兩個 32，`--page-end`）
+  - 框線 1px、2px、6px（`--rule`、`--rule-strong`、`--rule-accent`）
+  - 焦點框粗 3px（`--focus-ring`）
   - 程式碼字級 `.95em`
   - 進度條高度 10px
   - 勾選框往下移 6px
   - 連結底線距離 3px
   - 焦點框位移 2px
   - 按鈕滑過時浮起 1px
+- 只給報讀軟體念的字（`.sr-only`）用固定的 1px、-1px 寫法，那不是間距，直接寫在 CSS 裡。
