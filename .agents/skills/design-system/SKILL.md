@@ -81,3 +81,21 @@ When generating design-system guidance, use this structure:
 - If introducing a new pattern, include migration guidance for existing components.
 
 <!-- TYPEUI_SH_MANAGED_END -->
+
+## 本專案的例外（路考網站；跟上面衝突時以這裡為準）
+- 字型用系統字，不用 Inter、JetBrains Mono：Inter 沒有中文；也不從外站載字型，學校網路擋外站時頁面會卡住。
+  - 內文：`"Noto Sans TC", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif`
+  - 等寬：`ui-monospace, Consolas, "Courier New", monospace`
+- 字級多一級 48px，只給成績大字用。
+- 對比（WCAG 2.2 AA，文字 ≥ 4.5:1）：
+  - 文字用加深的 `*-ink` 版本：secondary、danger、warning、success 各一個，淺色深色各一個值。
+  - `#80A1C1`（secondary）只用在框線和裝飾，不用在文字上。
+  - 桃色 primary 上面一律放深色字。
+- 深色模式用 CSS `light-dark()`，淺色深色的值各寫一次。不支援的舊瀏覽器停在淺色版；全螢幕播放器在那裡改用淺色底。
+- 不在 4/8/12/16/24/32 級距裡、但允許的小數值。各自有自己的變數，不借用間距變數：
+  - 程式碼字級 `.95em`
+  - 進度條高度 10px
+  - 勾選框往下移 6px
+  - 連結底線距離 3px
+  - 焦點框位移 2px
+  - 按鈕滑過時浮起 1px

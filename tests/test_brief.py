@@ -93,6 +93,17 @@ def test_step_navigation_jumps_to_each_step(client, page: str) -> None:
     assert not missing, f"{page} 的步驟導覽連到不存在的地方：{missing}"
 
 
+@pytest.mark.parametrize("page", ["/", "/submit.html"])
+def test_step_navigation_reads_each_number_as_a_step(client, page: str) -> None:
+    html = client.get(page).text
+    nav = re.search(r'<nav class="[^"]*step-nav.*?</nav>', html, re.S).group(0)
+    numbers = re.findall(r'<span class="step-num"[^>]*>(\d+)</span>', nav)
+    spoken = re.findall(r'<span class="sr-only">([^<]+)</span>', nav)
+
+    assert numbers, f"{page} 的步驟導覽要有步驟編號"
+    assert spoken == [f"第 {n} 步：" for n in numbers], f"{page} 的步驟編號要念成「第 N 步」，不要跟後面的字黏在一起：{spoken}"
+
+
 @pytest.mark.parametrize("page", ["/", "/submit.html", "/result.html", "/teacher.html"])
 def test_pages_load_nothing_from_other_sites(client, page: str) -> None:
     html = client.get(page).text
