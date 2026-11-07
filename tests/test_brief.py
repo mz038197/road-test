@@ -80,3 +80,44 @@ def test_every_link_on_the_site_pages_works(client, training_video, page: str) -
             continue
         response = client.get(urlsplit(urljoin(f"http://testserver{page}", link)).path)
         assert response.status_code == 200, f"{page} 裡的 {link} 打不開（{response.status_code}）"
+
+
+@pytest.mark.parametrize("page", ["/", "/submit.html"])
+def test_step_navigation_jumps_to_each_step(client, page: str) -> None:
+    html = client.get(page).text
+    anchors = re.findall(r'href="#([^"]+)"', html)
+    ids = set(re.findall(r'\bid="([^"]+)"', html))
+
+    assert anchors, f"{page} 要有步驟導覽（連到頁內每一步）"
+    missing = [a for a in anchors if a not in ids]
+    assert not missing, f"{page} 的步驟導覽連到不存在的地方：{missing}"
+
+
+@pytest.mark.parametrize("page", ["/", "/submit.html"])
+def test_step_navigation_reads_each_number_as_a_step(client, page: str) -> None:
+    html = client.get(page).text
+    nav = re.search(r'<nav class="[^"]*step-nav.*?</nav>', html, re.S).group(0)
+    numbers = re.findall(r'<span class="step-num"[^>]*>(\d+)</span>', nav)
+    spoken = re.findall(r'<span class="sr-only">([^<]+)</span>', nav)
+
+    assert numbers, f"{page} 的步驟導覽要有步驟編號"
+    assert spoken == [f"第 {n} 步：" for n in numbers], f"{page} 的步驟編號要念成「第 N 步」，不要跟後面的字黏在一起：{spoken}"
+
+
+@pytest.mark.parametrize("page", ["/", "/submit.html", "/result.html", "/teacher.html"])
+def test_pages_load_nothing_from_other_sites(client, page: str) -> None:
+    html = client.get(page).text
+    external = re.findall(r'<(?:link|script)[^>]+(?:href|src)="(https?://[^"]+)"', html)
+
+    assert not external, f"{page} 不要從外站載字型或程式，學校網路擋外站時會卡住：{external}"
+
+
+def test_submission_fields_are_named_after_what_they_ask_for(client) -> None:
+    html = client.get("/submit.html").text
+    labels = {
+        target: re.sub(r"<[^>]+>", "", text)  # label 裡面就算有其他標籤，也只看文字
+        for target, text in re.findall(r'<label\b[^>]*\bfor="([^"]+)"[^>]*>(.*?)</label>', html, re.S)
+    }
+
+    assert "模型檔" in labels.get("model", ""), f"上傳欄位的名稱要寫「模型檔」：{labels.get('model')}"
+    assert "CONF" in labels.get("conf", ""), f"CONF 欄位的名稱要寫「CONF」：{labels.get('conf')}"

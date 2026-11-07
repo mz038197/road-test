@@ -6,64 +6,122 @@
   <title>交件｜路考網站</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="steps-page">
 <main>
-  <p><a href="./">← 回委託</a></p>
-  <h1>交件</h1>
-  <p class="muted">模擬路考可以交很多次，每組同時只能有一件在跑。正式路考每組只能交一次，老師在課堂上開放時才能交；開放期間模擬路考暫停收件。</p>
-  <p id="final-banner" class="banner" hidden>正式路考開放中。</p>
+  <header class="page-head">
+    <a class="back" href="./">← 回委託</a>
+    <h1>交件</h1>
+    <p class="muted">模擬路考可以交很多次，每組同時只能有一件在跑。正式路考每組只能交一次，老師在課堂上開放時才能交；開放期間模擬路考暫停收件。</p>
+    <p id="final-banner" class="banner" hidden>正式路考開放中。</p>
+  </header>
 
-  <form id="submit" class="card">
-    <h2>交件</h2>
-    <fieldset class="kinds">
-      <legend>路考</legend>
-      <label class="inline"><input type="radio" name="kind" value="mock" checked> 模擬路考</label>
-      <label class="inline"><input type="radio" name="kind" value="final"> 正式路考</label>
-      <p class="muted" id="kind-hint"></p>
-    </fieldset>
-    <label for="group">組別</label>
-    <select id="group" name="group" required></select>
-    <label for="code">組別代碼</label>
-    <input id="code" name="code" type="password" autocomplete="off" required>
-    <label for="model">模型檔（訓練程式匯出的 .onnx，檔名不拘）</label>
-    <input id="model" name="model" type="file" accept=".onnx" required>
-    <label for="conf">CONF（信心門檻，0.05～1）</label>
-    <input id="conf" name="conf" type="number" min="0.05" max="1" step="0.05" value="0.35" required>
-    <p class="muted" id="conf-hint">模擬路考的 CONF 交了之後還可以在結果頁調整。</p>
-    <label class="inline confirm" id="confirm-row" hidden>
-      <input type="checkbox" name="confirm" value="true" id="confirm">
-      我知道正式路考每組只能交一次，交了就不能重交，CONF 也不能再改。
-    </label>
-    <button type="submit">交件</button>
-    <p id="submit-error" class="error" role="alert"></p>
-  </form>
+  <div class="steps-layout">
+    <nav class="card step-nav" aria-label="交件步驟">
+      <ol>
+        <li><a href="#step-kind"><span class="step-num" aria-hidden="true">1</span><span class="sr-only">第 1 步：</span>選路考</a></li>
+        <li><a href="#step-group"><span class="step-num" aria-hidden="true">2</span><span class="sr-only">第 2 步：</span>組別與組別代碼</a></li>
+        <li><a href="#step-model"><span class="step-num" aria-hidden="true">3</span><span class="sr-only">第 3 步：</span>模型檔</a></li>
+        <li><a href="#step-conf"><span class="step-num" aria-hidden="true">4</span><span class="sr-only">第 4 步：</span>CONF</a></li>
+        <li><a href="#step-send"><span class="step-num" aria-hidden="true">5</span><span class="sr-only">第 5 步：</span>交件</a></li>
+        <li><a href="#records-card"><span class="step-num" aria-hidden="true">≡</span>路考紀錄</a></li>
+      </ol>
+    </nav>
 
-  <section class="card">
-    <h2>我們這組的路考紀錄</h2>
-    <p class="muted" id="records-hint">填好上面的組別和組別代碼，按「看路考紀錄」。</p>
-    <button type="button" class="secondary" id="show-records">看路考紀錄</button>
-    <p id="records-error" class="error" role="alert"></p>
-    <div id="records" hidden>
-      <h3>正式路考</h3>
-      <p class="muted" id="final-empty">還沒交正式路考。</p>
-      <div class="table-wrap">
-        <table id="records-final">
-          <thead><tr><th>上傳時間</th><th>檔名</th><th class="num">CONF（鎖定）</th><th>狀態</th><th class="num">成績</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <h3>模擬路考</h3>
-      <p class="muted" id="mock-empty">還沒交模擬路考。</p>
-      <div class="table-wrap">
-        <table id="records-mock">
-          <thead><tr><th>上傳時間</th><th>檔名</th><th class="num">CONF</th><th>狀態</th><th class="num">成績</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+    <div class="step-column">
+      <form id="submit" class="step-list">
+        <section class="card step" id="step-kind">
+          <div class="step-num" aria-hidden="true">1</div>
+          <div class="step-body">
+            <h2>選路考</h2>
+            <fieldset class="kinds">
+              <legend>路考</legend>
+              <label class="inline"><input type="radio" name="kind" value="mock" checked> 模擬路考</label>
+              <label class="inline"><input type="radio" name="kind" value="final"> 正式路考</label>
+              <p class="muted" id="kind-hint"></p>
+            </fieldset>
+          </div>
+        </section>
+
+        <section class="card step" id="step-group">
+          <div class="step-num" aria-hidden="true">2</div>
+          <div class="step-body">
+            <h2>組別與組別代碼</h2>
+            <div class="pair">
+              <div>
+                <label for="group">組別</label>
+                <select id="group" name="group" required></select>
+              </div>
+              <div>
+                <label for="code">組別代碼</label>
+                <input id="code" name="code" type="password" autocomplete="off" required>
+              </div>
+            </div>
+            <p class="muted">組別代碼是老師發給每組的密碼，不要給別組。</p>
+          </div>
+        </section>
+
+        <section class="card step" id="step-model">
+          <div class="step-num" aria-hidden="true">3</div>
+          <div class="step-body">
+            <h2>模型檔</h2>
+            <label for="model">模型檔（訓練程式匯出的 .onnx，檔名不拘）</label>
+            <input id="model" name="model" type="file" accept=".onnx" required>
+          </div>
+        </section>
+
+        <section class="card step" id="step-conf">
+          <div class="step-num" aria-hidden="true">4</div>
+          <div class="step-body">
+            <h2>CONF</h2>
+            <label for="conf">CONF（信心門檻，0.05～1）</label>
+            <input id="conf" name="conf" type="number" min="0.05" max="1" step="0.05" value="0.35" required>
+            <p class="muted" id="conf-hint">模擬路考的 CONF 交了之後還可以在結果頁調整。</p>
+          </div>
+        </section>
+
+        <section class="card step" id="step-send">
+          <div class="step-num" aria-hidden="true">5</div>
+          <div class="step-body">
+            <h2>交件</h2>
+            <label class="inline confirm" id="confirm-row" hidden>
+              <input type="checkbox" name="confirm" value="true" id="confirm">
+              我知道正式路考每組只能交一次，交了就不能重交，CONF 也不能再改。
+            </label>
+            <button type="submit" class="full-width">交件</button>
+            <p id="submit-error" class="error" role="alert"></p>
+          </div>
+        </section>
+      </form>
+
+      <section class="card records" id="records-card">
+        <h2>我們這組的路考紀錄</h2>
+        <p class="muted" id="records-hint">填好上面的組別和組別代碼，按「看路考紀錄」。</p>
+        <button type="button" class="secondary" id="show-records">看路考紀錄</button>
+        <p id="records-error" class="error" role="alert"></p>
+        <div id="records" hidden>
+          <h3>正式路考</h3>
+          <p class="muted" id="final-empty">還沒交正式路考。</p>
+          <div class="table-wrap">
+            <table id="records-final">
+              <thead><tr><th>上傳時間</th><th>檔名</th><th class="num">CONF（鎖定）</th><th>狀態</th><th class="num">成績</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h3>模擬路考</h3>
+          <p class="muted" id="mock-empty">還沒交模擬路考。</p>
+          <div class="table-wrap">
+            <table id="records-mock">
+              <thead><tr><th>上傳時間</th><th>檔名</th><th class="num">CONF</th><th>狀態</th><th class="num">成績</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </div>
-  </section>
+  </div>
 </main>
 <script src="common.js"></script>
 <script src="submit.js"></script>
+<script src="step-nav.js"></script>
 </body>
 </html>
