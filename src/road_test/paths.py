@@ -11,7 +11,7 @@ def _from_env(name: str, meaning: str) -> Path:
 
 
 def data_dir() -> Path:
-    """路考資料夾：路考影片、答案、交件、結果、組別代碼。部署時就是 Fly 的 volume。"""
+    """路考資料夾：路考影片、答案、交件、結果、組別。部署時就是 Fly 的 volume。"""
     return _from_env("ROAD_TEST_DATA", "路考資料夾")
 
 

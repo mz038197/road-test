@@ -29,7 +29,7 @@ def test_site_is_idle_only_after_the_idle_time_with_no_requests(client: TestClie
 
     clock.now += 4 * 60
     assert not guard.idle(), "開機 4 分鐘、閒置 5 分鐘才關"
-    web.get("/api/groups")
+    web.get("/")
     clock.now += 4 * 60
     assert not guard.idle(), "有人連進來就重新計時"
     clock.now += 61

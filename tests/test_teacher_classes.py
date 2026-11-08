@@ -126,7 +126,7 @@ def test_the_final_switch_is_per_class(client) -> None:
     assert closed.json()["final_open"] is False, "admin 也能開關任一班"
 
 
-@pytest.mark.parametrize("path", ["/", "/teacher.html", "/api/road-tests", "/api/teacher/classes"])
+@pytest.mark.parametrize("path", ["/", "/teacher.html", "/api/student", "/api/teacher/classes"])
 def test_every_response_allows_only_the_sites_own_scripts(client, path) -> None:
     response = client.get(path, headers=bearer(TEACHER_KEY))
 
@@ -165,6 +165,6 @@ def test_the_site_starts_on_a_fresh_database_and_leaves_the_old_one_alone(data_d
 
     client = open_site()
 
-    assert client.get("/api/teacher/records", headers={"X-Teacher-Password": "teacher-secret"}).json() == [], \
+    assert client.get("/api/teacher/classes/56/records", headers=bearer(TEACHER_KEY)).json() == [], \
         "舊資料不搬（還沒上過課），用新的結構重新開始"
     assert client.app.state.store.path != data_dir / "road_test.db"

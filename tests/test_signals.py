@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
+from conftest import CLASSROOM_KEY, bearer
 from road_test.web.signals import start_signal_forwarding
 
 
@@ -180,14 +181,16 @@ def test_an_unexpected_error_in_a_request_reaches_vans_signals(receiver, forward
     def broken(*args, **kwargs):
         raise RuntimeError("沒想到的錯")
 
-    monkeypatch.setattr(app.state.store, "setting", broken)
-    response = TestClient(app, raise_server_exceptions=False).get("/api/road-tests?key=vcr_sk_secret")
+    monkeypatch.setattr(app.state.store, "class_groups", broken)
+    response = TestClient(app, raise_server_exceptions=False).get("/api/student?key=vcr_sk_secret",
+                                                                  headers=bearer(CLASSROOM_KEY))
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal server error"}
     _wait_until(lambda: receiver.posts)
     body = receiver.posts[0]["body"]
     assert body["source"] == "road-test"
     assert body["logger_name"].startswith("road_test.")
-    assert body["message"].startswith("GET /api/road-tests 出錯\n")
+    assert body["message"].startswith("GET /api/student 出錯\n")
     assert "RuntimeError: 沒想到的錯" in body["message"]
-    assert "vcr_sk_secret" not in body["message"]
+    assert "vcr_sk_secret" not in body["message"] and CLASSROOM_KEY not in body["message"]
+

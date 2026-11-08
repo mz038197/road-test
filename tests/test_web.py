@@ -1,14 +1,7 @@
 """路考網站的 HTTP API（測試切入點 1）：假偵測器＋只有 3 個計分幀的小路考。"""
 import pytest
 
-from conftest import CAR, GHOST, PED, as_group, model, run_queue, submit
-
-
-def test_wrong_group_code_is_rejected(client) -> None:
-    response = submit(client, group="01", code="banana")
-
-    assert response.status_code == 403, "組別代碼錯誤要退件"
-    assert "組別代碼" in response.json()["detail"], "退件原因要說是組別代碼不對"
+from conftest import CAR, GHOST, PED, as_group, model, records, run_queue, submit
 
 
 def test_after_the_queue_runs_the_group_gets_its_score_and_examiner_log(client) -> None:
@@ -38,7 +31,7 @@ def test_unfit_model_is_rejected_without_leaving_a_record(client, content: bytes
 
     assert response.status_code == 422, "模型不合格要退件"
     assert reason in response.json()["detail"], f"退件原因要說明「{reason}」"
-    assert client.get("/api/groups/02/records", headers=as_group("02")).json() == [], "退件不算一次路考"
+    assert records(client, "02") == [], "退件不算一次路考"
     assert submit(client, group="02").status_code == 201, "退件之後可以馬上重交"
 
 
@@ -63,14 +56,11 @@ def test_groups_see_only_their_own_records(client) -> None:
     theirs = submit(client, group="02").json()["id"]
     run_queue(client)
 
-    records = client.get("/api/groups/01/records", headers=as_group("01")).json()
+    mine_only = records(client, "01")
 
-    assert [r["id"] for r in records] == [mine], "路考紀錄只列自己這組"
-    assert records[0]["kind_name"] == "模擬路考" and records[0]["score"] is not None
-    assert client.get("/api/groups/02/records", headers=as_group("01")).status_code == 403, "不能看別組的路考紀錄"
+    assert [r["id"] for r in mine_only] == [mine], "路考紀錄只列自己這組"
+    assert mine_only[0]["kind_name"] == "模擬路考" and mine_only[0]["score"] is not None
     assert client.get(f"/api/submissions/{theirs}", headers=as_group("01")).status_code == 404, "不能看別組的結果"
-    wrong = {"X-Group": "01", "X-Group-Code": "banana"}
-    assert client.get("/api/groups/01/records", headers=wrong).status_code == 403, "組別代碼不對就不能看"
 
 
 def test_score_comes_first_then_every_frame_is_filled_in(client) -> None:
@@ -114,7 +104,7 @@ def test_submissions_and_results_survive_a_restart(open_site) -> None:
     after = open_site()  # 重開機：同一個路考資料夾
     run_queue(after)
 
-    assert [r["id"] for r in after.get("/api/groups/01/records", headers=as_group("01")).json()] == [scored], \
+    assert [r["id"] for r in records(after, "01")] == [scored], \
         "重開之後路考紀錄還在"
     assert after.get(f"/api/submissions/{waiting}", headers=as_group("02")).json()["status"] == "done", \
         "重開之前還在排隊的，重開之後照樣跑完"
@@ -137,4 +127,4 @@ def test_the_site_serves_its_pages_without_a_build_step(client) -> None:
         response = client.get(page)
         assert response.status_code == 200, f"{page} 要由後端直接提供"
     assert "text/html" in client.get("/").headers["content-type"]
-    assert client.get("/api/groups").json() == ["01", "02", "03"], "交件頁的組別選單，不含代碼"
+

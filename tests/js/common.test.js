@@ -66,3 +66,13 @@ test("被拒時丟出 router 給的訊息", async () => {
 
   await assert.rejects(C.api("/api/student"), { message: "無效的 API 金鑰" });
 });
+
+test("只帶金鑰，不帶舊的老師密碼或組別代碼標頭", async () => {
+  const { C, requests } = browser();
+  sessionStorage.setItem("road-test-teacher", "teacher-secret");  // 舊版管理頁留下來的
+  C.saveKey(KEY);
+
+  await C.api("/api/teacher/classes");
+
+  assert.deepEqual(Object.keys(requests[0].headers), ["Authorization"]);
+});

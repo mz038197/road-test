@@ -47,7 +47,7 @@
       <p class="muted">學生第一次進路考網站時，從這個班級的組別裡選一組。正式路考的次數以組別計算。</p>
       <div class="table-wrap">
         <table id="groups">
-          <thead><tr><th>組別</th><th class="num">正式路考次數</th><th></th></tr></thead>
+          <thead><tr><th>組別</th><th>組員</th><th class="num">正式路考次數</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -59,7 +59,38 @@
         <input id="group-tries" type="number" min="1" max="99" step="1" value="1" required>
         <button type="submit">新增組別</button>
       </form>
+      <p class="muted">要再給某一組一次正式路考（例如模型出錯要重交），就把這組的次數加 1 再按「儲存次數」。</p>
     </section>
+
+    <section class="card">
+      <h2>組員</h2>
+      <p class="muted">學生選組時自己填顯示名稱，選了就鎖定。選錯組的，在這裡改到正確的組；之前交的路考照樣算原本那組。</p>
+      <div class="table-wrap">
+        <table id="members">
+          <thead><tr><th>顯示名稱</th><th>組別</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="no-members" class="muted" hidden>還沒有學生選組。</p>
+    </section>
+
+    <section class="card">
+      <h2>路考紀錄</h2>
+      <div class="row">
+        <label class="inline" for="filter">組別</label>
+        <select id="filter"><option value="">全部</option></select>
+        <button type="button" id="reload" class="secondary small">重新整理</button>
+      </div>
+      <div class="table-wrap">
+        <table id="records">
+          <thead><tr><th>組別</th><th>交件的學生</th><th>路考</th><th>上傳時間</th><th>檔名</th><th class="num">CONF</th>
+            <th>狀態</th><th class="num">成績</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="no-records" class="muted" hidden>這個班級還沒有路考紀錄。</p>
+    </section>
+
 
     <p id="notice" class="notice" role="status"></p>
     <p id="error" class="error" role="alert"></p>

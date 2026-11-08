@@ -1,4 +1,4 @@
-"""路考網站測試共用的東西：小路考、假偵測器、交件的小幫手。
+"""路考網站測試共用的東西：小路考、假偵測器、假的 router、交件的小幫手。
 
 假偵測器不讀真的 ONNX：交上去的「模型」是一份 JSON，寫好類別名稱和每一幀要回傳的框。
 寫壞的 JSON 就當成讀不進來的模型。這樣每個測試看交了什麼，就知道偵測器會框出什麼。
@@ -14,8 +14,6 @@ from road_test.detector import ModelRejected
 from road_test.web.app import RoadTest, create_app
 from road_test.web.key_check import KeyCheck
 
-GROUPS = {"01": "apple", "02": "banana", "03": "cherry"}
-TEACHER = "teacher-secret"
 CLASSES = ["car", "pedestrian", "bicyclist", "sign"]
 PED = [100, 100, 140, 200]
 CAR = [300, 200, 400, 260]
@@ -64,6 +62,7 @@ ADMIN_KEY = "vcr_sk_admin00" + "a" * 40        # admin 的個人金鑰：classes
 NO_CLASS_KEY = "vcr_sk_nocls0" + "n" * 40      # 只有學生身分的人的個人金鑰：classes 是空的
 CLASSROOM_KEY = "vcr_sk_class0" + "c" * 40     # 課堂金鑰，56 班的學生 1234
 CLASSMATE_KEY = "vcr_sk_mate00" + "m" * 40     # 課堂金鑰，56 班的學生 1235
+THIRD_KEY = "vcr_sk_third0" + "h" * 40         # 課堂金鑰，56 班的學生 1236
 OTHER_CLASS_KEY = "vcr_sk_other0" + "o" * 40   # 課堂金鑰，57 班的學生 2001
 DOWN_KEY = "vcr_sk_down00" + "d" * 40          # router 對這把金鑰回 503
 ALL_CLASSES = [{"id": 56, "name": "週一 程式設計"}, {"id": 57, "name": "週三 進階班"}, {"id": 58, "name": "週五 別人的班"}]
@@ -81,6 +80,7 @@ def router_answers() -> dict[str, dict]:
         NO_CLASS_KEY: {**personal, "user_id": 77, "classes": []},
         CLASSROOM_KEY: contract("classroom-accepted"),
         CLASSMATE_KEY: {**contract("classroom-accepted"), "student_id": 1235},
+        THIRD_KEY: {**contract("classroom-accepted"), "student_id": 1236},
         OTHER_CLASS_KEY: {**contract("classroom-accepted"), "student_id": 2001, "class_id": 57, "class_session_id": 790},
     }
 
@@ -106,7 +106,6 @@ def bearer(key: str) -> dict:
 def data_dir(tmp_path: Path) -> Path:
     (tmp_path / "answers").mkdir()
     (tmp_path / "answers" / "Mini.json").write_text(json.dumps(MINI), encoding="utf-8")
-    (tmp_path / "groups.json").write_text(json.dumps(GROUPS), encoding="utf-8")
     return tmp_path
 
 
@@ -116,7 +115,6 @@ def open_site(data_dir: Path):
     opened = []
 
     def open_(**options) -> TestClient:
-        options.setdefault("teacher_password", TEACHER)
         options.setdefault("verify_key", fake_router_key_check().check)
         app = create_app(data_dir, load_detector=FakeDetector,
                          road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT),
@@ -136,15 +134,34 @@ def client(open_site) -> TestClient:
     return open_site()
 
 
-def submit(client: TestClient, group: str = "01", code: str | None = None, content: bytes | None = None,
+# 交件測試用的班級：56 班（TEACHER_KEY 管）有 01、02、03 三組，每組一個學生
+STUDENTS = {"01": CLASSROOM_KEY, "02": CLASSMATE_KEY, "03": THIRD_KEY}
+CLASS_ID = 56
+
+
+def seat(client: TestClient) -> None:
+    """老師替 56 班建好 01、02、03 組，每個學生選進自己那組（已經建好就不再建）。"""
+    if client.get(f"/api/teacher/classes/{CLASS_ID}", headers=bearer(TEACHER_KEY)).json()["groups"]:
+        return
+    for group, key in STUDENTS.items():
+        gid = client.post(f"/api/teacher/classes/{CLASS_ID}/groups", json={"name": group},
+                          headers=bearer(TEACHER_KEY)).json()["id"]
+        joined = client.post("/api/student/group", json={"group_id": gid, "display_name": f"{group} 組的學生"},
+                             headers=bearer(key))
+        assert joined.status_code == 201, joined.text
+
+
+def submit(client: TestClient, group: str = "01", content: bytes | None = None,
            filename: str = "best.onnx", conf: float | None = None, kind: str = "mock", confirm: bool = True):
-    """交件。正式路考預設勾了「交了就不能重交」的確認（confirm=False 就是沒勾）。"""
-    data = {"group": group, "code": GROUPS.get(group, "") if code is None else code, "kind": kind}
+    """這組的學生用課堂金鑰交件。正式路考預設勾了「交了就不能重交」的確認（confirm=False 就是沒勾）。"""
+    seat(client)
+    data = {"kind": kind}
     if conf is not None:
         data["conf"] = str(conf)
     if kind == "final" and confirm:
         data["confirm"] = "true"
-    return client.post("/api/submissions", data=data, files={"model": (filename, content or model(), "application/octet-stream")})
+    return client.post("/api/submissions", data=data, headers=as_group(group),
+                       files={"model": (filename, content or model(), "application/octet-stream")})
 
 
 def run_queue(client: TestClient) -> None:
@@ -153,13 +170,20 @@ def run_queue(client: TestClient) -> None:
 
 
 def as_group(group: str) -> dict:
-    return {"X-Group": group, "X-Group-Code": GROUPS[group]}
+    """這組的學生的課堂金鑰。"""
+    return bearer(STUDENTS[group])
 
 
-def as_teacher(password: str = TEACHER) -> dict:
-    return {"X-Teacher-Password": password}
+def records(client: TestClient, group: str) -> list[dict]:
+    """這組的路考紀錄（學生看的），新的在前面。"""
+    seat(client)
+    response = client.get("/api/student/records", headers=as_group(group))
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
 def set_final(client: TestClient, is_open: bool):
-    """老師開關正式路考。"""
-    return client.put("/api/teacher/final", json={"open": is_open}, headers=as_teacher())
+    """老師開關 56 班的正式路考。"""
+    seat(client)
+    return client.put(f"/api/teacher/classes/{CLASS_ID}/final", json={"open": is_open}, headers=bearer(TEACHER_KEY))
+

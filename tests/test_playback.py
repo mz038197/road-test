@@ -21,7 +21,7 @@ def test_the_result_carries_a_video_url_that_plays_without_group_headers(client,
     sid = submit(client).json()["id"]
 
     url = video_url(client, sid)
-    response = client.get(url)  # 不帶 X-Group：<video> 沒辦法帶標頭
+    response = client.get(url)  # 不帶金鑰：<video> 沒辦法帶標頭
 
     assert response.status_code == 200, f"結果裡的影片網址不帶標頭也要能播：{response.text}"
     assert response.content == video, "影片網址給的是這次路考的影片"

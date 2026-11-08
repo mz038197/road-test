@@ -1,20 +1,16 @@
-"""正式路考：老師開關、每組一次、CONF 鎖定、優先執行（HTTP API）。"""
-from conftest import as_group, as_teacher, run_queue, set_final, submit
+"""正式路考：老師替班級開關、每組的次數、CONF 鎖定、優先執行（HTTP API）。
+
+交件的是 56 班 01、02、03 組的學生（conftest 的 submit），老師用個人金鑰開關（set_final）。
+"""
+from conftest import as_group, records, run_queue, set_final, submit
 
 
-def test_without_the_teacher_password_the_final_cannot_be_opened(client) -> None:
-    for headers in ({}, as_teacher("wrong"), as_group("01")):
-        response = client.put("/api/teacher/final", json={"open": True}, headers=headers)
-        assert response.status_code == 403, f"沒有老師密碼或密碼錯誤要拒絕：{headers}"
-        assert "老師密碼" in response.json()["detail"], "拒絕原因要說是老師密碼"
-    assert client.get("/api/road-tests").json()["final_open"] is False, "被拒絕之後正式路考還是關著"
+def test_a_student_cannot_open_the_final(client) -> None:
+    submit(client, group="01")
+    response = client.put("/api/teacher/classes/56/final", json={"open": True}, headers=as_group("01"))
 
-
-def test_when_the_server_has_no_teacher_password_nobody_can_open_the_final(open_site) -> None:
-    client = open_site(teacher_password=None)
-    for password in ("", "anything"):
-        response = client.put("/api/teacher/final", json={"open": True}, headers=as_teacher(password))
-        assert response.status_code == 403, "伺服器沒設定老師密碼時，開關一律拒絕"
+    assert response.status_code == 403, "課堂金鑰不能開關正式路考"
+    assert client.get("/api/student", headers=as_group("01")).json()["final_open"] is False
 
 
 def test_the_final_is_refused_until_the_teacher_opens_it(client) -> None:
@@ -22,7 +18,7 @@ def test_the_final_is_refused_until_the_teacher_opens_it(client) -> None:
     assert closed.status_code == 400, "正式路考沒開放時不收件"
     assert "正式路考" in closed.json()["detail"] and "沒有開放" in closed.json()["detail"]
 
-    assert set_final(client, True).json()["final_open"] is True, "老師帶密碼就能開放"
+    assert set_final(client, True).json()["final_open"] is True, "老師帶個人金鑰就能開放"
     assert submit(client, group="01", kind="final").status_code == 201, "開放後收件"
 
 
@@ -31,7 +27,7 @@ def test_the_switch_survives_a_restart(open_site) -> None:
 
     after = open_site()
 
-    assert after.get("/api/road-tests").json()["final_open"] is True, "重開機之後正式路考還是開著"
+    assert after.get("/api/student", headers=as_group("01")).json()["final_open"] is True, "重開機之後正式路考還是開著"
 
 
 def test_while_the_final_is_open_mock_submissions_are_refused(client) -> None:
@@ -52,7 +48,7 @@ def test_the_final_needs_the_no_resubmission_confirmation(client) -> None:
 
     assert response.status_code == 400, "沒確認「交了就不能重交」就不收"
     assert "不能重交" in response.json()["detail"]
-    assert client.get("/api/groups/01/records", headers=as_group("01")).json() == [], "沒確認不算一次"
+    assert records(client, "01") == [], "沒確認不算一次"
 
 
 def test_each_group_takes_the_final_only_once(client) -> None:
@@ -64,7 +60,7 @@ def test_each_group_takes_the_final_only_once(client) -> None:
 
     assert first.status_code == 201
     assert again.status_code == 409, "正式路考每組只能交一次"
-    assert "只能交一次" in again.json()["detail"]
+    assert "次數用完" in again.json()["detail"]
     assert submit(client, group="02", kind="final").status_code == 201, "別組不受影響"
 
 
@@ -132,7 +128,8 @@ def test_records_mark_mock_and_final_apart(client) -> None:
     set_final(client, True)
     final = submit(client, group="01", kind="final").json()["id"]
 
-    records = {r["id"]: r for r in client.get("/api/groups/01/records", headers=as_group("01")).json()}
+    seen = {r["id"]: r for r in records(client, "01")}
 
-    assert (records[mock]["kind"], records[mock]["kind_name"]) == ("mock", "模擬路考")
-    assert (records[final]["kind"], records[final]["kind_name"]) == ("final", "正式路考")
+    assert (seen[mock]["kind"], seen[mock]["kind_name"]) == ("mock", "模擬路考")
+    assert (seen[final]["kind"], seen[final]["kind_name"]) == ("final", "正式路考")
+

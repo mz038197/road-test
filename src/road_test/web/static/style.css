@@ -260,10 +260,9 @@ body.wide main { max-width: var(--page-wide); }
   .player:not(:fullscreen) .panel { max-height: 50vh; }
 }
 
-/* ---- 管理頁（teacher.html、teacher-password.html） ---- */
+/* ---- 管理頁（teacher.html） ---- */
 body.admin main { max-width: var(--page-admin); }
 .row { display: flex; align-items: center; gap: var(--s-12); flex-wrap: wrap; margin-top: var(--s-12); }
 .row button, .row label { margin: 0; }
 .row select { width: auto; }
-td.code { font: 600 var(--fs-20)/1.2 var(--mono); letter-spacing: .06em; }
 td.actions button + button { margin-left: var(--s-8); }
