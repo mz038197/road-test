@@ -131,7 +131,7 @@ uv run make-answers --camvid <CamVid資料夾> --out <答案.json>
 
 ## 部署（Fly.io）
 
-網址：<https://road-test.fly.dev/>。push 到 `main` 就由 GitHub Actions（`.github/workflows/deploy.yml`）跑測試、`flyctl deploy`。也可以在 Actions 頁面按「Run workflow」手動部署。
+網址：<https://lukao.vanscoding.com/>（Fly 原本的 <https://road-test.fly.dev/> 也還能用）。push 到 `main` 就由 GitHub Actions（`.github/workflows/deploy.yml`）跑測試、`flyctl deploy`。也可以在 Actions 頁面按「Run workflow」手動部署。
 
 | 東西 | 在哪裡 |
 |---|---|

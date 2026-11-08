@@ -126,7 +126,7 @@
         <h2>注意事項</h2>
         <ul>
           <li>Roboflow 匯出時 Resize 不要選 <strong>Stretch</strong>：Stretch 會把 4:3 的畫面硬拉成正方形，車和人都變形；路考時是等比例縮小、旁邊補灰邊，訓練時看到的形狀跟路考不一樣，就認不出來。選 Fit（補邊），或不要 Resize。</li>
-          <li>類別名稱必須是 <code>car</code>、<code>pedestrian</code>、<code>bicyclist</code>、<code>sign</code>，全部小寫、拼字一樣，不能多也不能少。訓練程式一開始會檢查，交件時網站也會再檢查一次，不對就退件（退件不算次數）。</li>
+          <li>類別名稱必須是 <code>car</code>、<code>pedestrian</code>、<code>bicyclist</code>、<code>sign</code>，全部小寫、拼字一樣，不能多也不能少。訓練程式一開始會檢查，交件時網站也會再檢查一次，不對就退件（退件不算次數）。打錯了不用重新標註：在 Roboflow 產生版本時，用前處理的 Modify Classes 把打錯的類別改成正確的名稱，重新匯出再訓練。</li>
           <li>交的是訓練程式匯出的 <code>.onnx</code> 檔，不是 <code>.pt</code>。</li>
           <li>課堂 API Key 不要給別人。每組同時只能有一件路考在跑，等它跑完再交下一件。</li>
         </ul>
