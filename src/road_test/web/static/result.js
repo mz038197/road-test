@@ -20,7 +20,9 @@ async function poll() {
     document.getElementById("error").textContent = e.message;
     return;  // 看不到就不再問
   }
-  document.getElementById("title").textContent = `第 ${s.group} 組 ${s.kind_name}`;
+  // 班級組別的名稱是老師取的（例如「第 1 組」）；舊的組別只有編號（#104 拿掉）
+  const group = s.group_id === null ? `第 ${s.group} 組` : s.group;
+  document.getElementById("title").textContent = `${group} ${s.kind_name}`;
   document.getElementById("meta").textContent = `${when(s.uploaded_at)} 上傳 ${s.filename}`;
   showStatus(s);
 

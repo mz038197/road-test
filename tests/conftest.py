@@ -63,6 +63,8 @@ TEACHER_KEY = "vcr_sk_teacher" + "t" * 40      # 個人金鑰，管理 56「週�
 ADMIN_KEY = "vcr_sk_admin00" + "a" * 40        # admin 的個人金鑰：classes 是所有班級
 NO_CLASS_KEY = "vcr_sk_nocls0" + "n" * 40      # 只有學生身分的人的個人金鑰：classes 是空的
 CLASSROOM_KEY = "vcr_sk_class0" + "c" * 40     # 課堂金鑰，56 班的學生 1234
+CLASSMATE_KEY = "vcr_sk_mate00" + "m" * 40     # 課堂金鑰，56 班的學生 1235
+OTHER_CLASS_KEY = "vcr_sk_other0" + "o" * 40   # 課堂金鑰，57 班的學生 2001
 DOWN_KEY = "vcr_sk_down00" + "d" * 40          # router 對這把金鑰回 503
 ALL_CLASSES = [{"id": 56, "name": "週一 程式設計"}, {"id": 57, "name": "週三 進階班"}, {"id": 58, "name": "週五 別人的班"}]
 
@@ -78,6 +80,8 @@ def router_answers() -> dict[str, dict]:
         ADMIN_KEY: {**personal, "user_id": 1, "is_admin": True, "classes": ALL_CLASSES},
         NO_CLASS_KEY: {**personal, "user_id": 77, "classes": []},
         CLASSROOM_KEY: contract("classroom-accepted"),
+        CLASSMATE_KEY: {**contract("classroom-accepted"), "student_id": 1235},
+        OTHER_CLASS_KEY: {**contract("classroom-accepted"), "student_id": 2001, "class_id": 57, "class_session_id": 790},
     }
 
 

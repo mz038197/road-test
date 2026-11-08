@@ -1,17 +1,9 @@
-// 路考網站共用：記住組別和組別代碼、呼叫 API、文字格式
+// 路考網站共用：記住金鑰、呼叫 API、文字格式
 const CLASS_NAMES = { car: "車", pedestrian: "行人", bicyclist: "騎車的人", sign: "號誌" };
 const STATUS_NAMES = {
   queued: "排隊中", scoring: "偵測計分幀中", filling: "成績出來了，正在補完其餘的幀",
   done: "全部完成", failed: "出錯了",
 };
-
-function loadGroup() {
-  try { return JSON.parse(localStorage.getItem("road-test-group")) || {}; } catch { return {}; }
-}
-
-function saveGroup(group, code) {
-  try { localStorage.setItem("road-test-group", JSON.stringify({ group, code })); } catch { /* 無痕視窗存不了，沒關係 */ }
-}
 
 // 老師密碼：舊版管理頁（teacher-password.html）登入後只存在這個分頁（sessionStorage），關掉分頁就要重打。
 // 管理頁在同一個分頁打開 result.html，結果頁就帶老師密碼，看得到任一組。
@@ -36,20 +28,19 @@ function loadKey() {
 }
 
 function saveKey(key) {
+  key = (key || "").trim();
   try {
     if (key) sessionStorage.setItem(API_KEY, key); else sessionStorage.removeItem(API_KEY);
   } catch { /* 存不了就每次重貼 */ }
 }
 
 // 呼叫 API 時帶的身分標頭：有金鑰就帶 Authorization；
-// 舊的身分（組別代碼、老師密碼，拿掉前還在用）：老師登入了就帶老師密碼，不然帶記住的組別和組別代碼。
+// 舊版管理頁登入了就帶老師密碼（#104 拿掉）。
 function authHeaders() {
   const key = loadKey();
   const bearer = key ? { Authorization: `Bearer ${key}` } : {};
   const teacher = loadTeacher();
-  if (teacher) return { ...bearer, "X-Teacher-Password": teacher };
-  const { group, code } = loadGroup();
-  return group ? { ...bearer, "X-Group": group, "X-Group-Code": code || "" } : bearer;
+  return teacher ? { ...bearer, "X-Teacher-Password": teacher } : bearer;
 }
 
 // 呼叫 API；帶上 authHeaders()。失敗時丟出伺服器給的中文原因
@@ -86,4 +77,9 @@ function when(iso) {
 function escapeHtml(s) {
   const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
   return String(s).replace(/[&<>"']/g, c => map[c]);
+}
+
+// node 測試用（tests/js/common.test.js）；瀏覽器裡沒有 module，什麼都不做
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { loadKey, saveKey, authHeaders, api };
 }

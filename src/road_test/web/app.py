@@ -27,7 +27,7 @@ from road_test.web.limiter import FailureLimit
 from road_test.web.upload_limit import UploadLimit
 from road_test.web.results import score_result
 from road_test.web.settings import DEFAULT_MAX_UPLOAD_MB
-from road_test.web.store import Busy, DuplicateGroup, NoFinalLeft, Store
+from road_test.web.store import AlreadyMember, Busy, DuplicateGroup, Member, NoFinalLeft, NoSuchGroup, Store, Team
 from road_test.web.teacher import TARGET as TEACHER_TARGET, is_teacher, teacher_check
 from road_test.web.worker import Worker
 
@@ -37,6 +37,7 @@ STATIC = Path(__file__).parent / "static"
 KIND_NAMES = {"mock": "模擬路考", "final": "正式路考"}
 TRAINING_VIDEO = "0016E5"  # 訓練影片，在路考資料夾的 videos/ 裡；不會出現在路考裡
 VIDEO_URL_HOURS = 6  # 路考影片網址幾小時後失效（結果頁每次拿成績都會拿到新的網址）
+NOT_OPEN = "這一班還沒開放路考"  # 班級還沒建立組別時學生看到的
 CONTENT_SECURITY_POLICY = "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 
 
@@ -49,12 +50,24 @@ class RoadTest:
 
 @dataclass(frozen=True)
 class Viewer:
-    """誰在看：組別（帶組別代碼）或老師（帶老師密碼，看得到全部）。"""
-    group: str | None
+    """誰在看。帶金鑰的：課堂金鑰看自己選的組，個人金鑰看自己能管理的班級（road-test ADR 0001）。
+    舊的（#104 拿掉）：組別（帶組別代碼）或老師（帶老師密碼，看得到全部舊的組別）。"""
+    group: str | None = None
     teacher: bool = False
+    member: Member | None = None
+    classes: frozenset[int] = frozenset()
 
     def can_see(self, group: str) -> bool:
-        return self.teacher or self.group == group
+        """舊的組別。"""
+        return self.teacher or (self.group is not None and self.group == group)
+
+    def can_see_row(self, row) -> bool:
+        """這次交件看不看得到：班級組別的交件只給同組的組員和管這個班級的老師。"""
+        if row["group_id"] is None:
+            return self.can_see(row["grp"])
+        if self.member is not None:
+            return row["group_id"] == self.member.group_id
+        return row["class_id"] in self.classes
 
 
 def check_classes(names) -> None:
@@ -143,6 +156,80 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         expires = int(clock()) + VIDEO_URL_HOURS * 3600
         return f"/api/submissions/{row['id']}/video?e={expires}&t={video_signature(row, expires)}"
 
+    # 金鑰（road-test ADR 0001）：每個請求帶 Authorization: Bearer vcr_sk_…，用 router 的 Key Check 驗（留 60 秒）。
+    # 網站不存金鑰，也不寫進記錄。
+    check_key = verify_key or (lambda _key: UNAVAILABLE)
+
+    def identity(authorization: str | None = Header(None)) -> Identity:
+        scheme, _, key = (authorization or "").partition(" ")
+        if scheme.lower() != "bearer" or not key.strip():
+            raise HTTPException(401, "請貼上你的 API Key。")
+        who = check_key(key)
+        if isinstance(who, Refusal):
+            raise HTTPException(503 if who.reason == "unavailable" else 401, who.message)
+        return who
+
+    def teacher_key(who: Identity = Depends(identity)) -> Identity:
+        """個人金鑰、而且有班級可以管（admin 是所有班級）才是老師。"""
+        if who.kind != "personal":
+            raise HTTPException(403, "課堂金鑰不能用老師的功能，請貼上你的個人 API Key。")
+        if not who.is_teacher:
+            raise HTTPException(403, "你沒有可管理的班級")
+        return who
+
+    def student(who: Identity = Depends(identity)) -> Identity:
+        """課堂金鑰才是學生：只能在自己的 class_id 裡選組、交件、看自己這組。"""
+        if who.kind != "classroom":
+            raise HTTPException(403, "個人金鑰不能交件，請貼上你的課堂 API Key。")
+        return who
+
+    def class_state(class_id: int) -> dict:
+        is_open = store.class_final_open(class_id)
+        return {"final_open": is_open, "kinds": [
+            {"kind": k, "name": KIND_NAMES[k], "open": (k == "final") == is_open} for k in road_tests]}
+
+    @app.get("/api/student")
+    def student_state(who: Identity = Depends(student)):
+        """學生進來時看的：自己班級的組別、自己選了哪一組、哪一種路考現在收件、這組還剩幾次正式路考。"""
+        groups = store.class_groups(who.class_id)
+        member = store.member(who.class_id, who.student_id)
+        return {"class_id": who.class_id, "student_id": who.student_id,
+                "groups": [{"id": g["id"], "name": g["name"]} for g in groups],
+                "message": "" if groups else NOT_OPEN,
+                "member": member_view(member), **class_state(who.class_id),
+                "finals_left": member and store.finals_left(Member(who.class_id, member["group_id"], who.student_id))}
+
+    def member_view(row) -> dict | None:
+        return row and {"group_id": row["group_id"], "group_name": row["group_name"], "display_name": row["display_name"]}
+
+    def joined_member(who: Identity) -> Member:
+        row = store.member(who.class_id, who.student_id)
+        if row is None:
+            raise HTTPException(409, "請先選組別，選好之後才能交件、看路考紀錄。")
+        return Member(who.class_id, row["group_id"], who.student_id)
+
+    @app.get("/api/student/records")
+    def student_records(who: Identity = Depends(student)):
+        """自己這組的路考紀錄，新的在前面。"""
+        return [summary(r) for r in store.of_class_group(joined_member(who).group_id)]
+
+    class Join(BaseModel):
+        group_id: int
+        display_name: str = Field(min_length=1, max_length=40)
+
+    @app.post("/api/student/group", status_code=201)
+    def join_group(body: Join, who: Identity = Depends(student)):
+        """第一次進來選組並填顯示名稱，之後鎖定；選錯由老師改。只能選自己班級的組。"""
+        name = body.display_name.strip()
+        if not name:
+            raise HTTPException(400, "請填顯示名稱，讓老師知道你是誰。")
+        try:
+            return member_view(store.join(who.class_id, who.student_id, body.group_id, name))
+        except NoSuchGroup:
+            raise HTTPException(404, "你的班級沒有這個組別。") from None
+        except AlreadyMember:
+            raise HTTPException(409, "你已經選過組別了，選錯請找老師改。") from None
+
     codes = GroupCodes(data_dir / "groups.json")  # 組別代碼，管理頁產生、重設（見 groups.py）
 
     def check_code(request: Request, group: str, code: str) -> None:
@@ -153,8 +240,14 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             raise HTTPException(403, "組別代碼不對，請跟老師確認你們這組的組別代碼。")
 
     def viewer(request: Request, x_group: str | None = Header(None), x_group_code: str | None = Header(None),
-               x_teacher_password: str | None = Header(None)) -> Viewer:
-        """帶老師密碼的是老師（看得到全部，管理頁播放任一組用），不然要帶對的組別代碼。"""
+               x_teacher_password: str | None = Header(None), authorization: str | None = Header(None)) -> Viewer:
+        """帶金鑰的看金鑰的身分；帶老師密碼的是老師（看得到全部，管理頁播放任一組用），不然要帶對的組別代碼。"""
+        if authorization:
+            who = identity(authorization)
+            if who.kind == "classroom":
+                row = store.member(who.class_id, who.student_id)
+                return Viewer(member=row and Member(who.class_id, row["group_id"], who.student_id))
+            return Viewer(classes=frozenset(cid for cid, _name in who.classes))
         if teacher_password and x_teacher_password:
             guesses.check(request, TEACHER_TARGET)
             if is_teacher(teacher_password, x_teacher_password):
@@ -165,14 +258,15 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
 
     def visible(sid: int, who: Viewer):
         row = store.get(sid)
-        if row is None or not who.can_see(row["grp"]):
+        if row is None or not who.can_see_row(row):
             raise HTTPException(404, "找不到這次路考。")
         return row
 
     def summary(row) -> dict:
         result = json.loads(row["result"]) if row["result"] else None
         return {
-            "id": row["id"], "group": row["grp"], "kind": row["kind"], "kind_name": KIND_NAMES[row["kind"]],
+            "id": row["id"], "group": row["grp"] if row["group_id"] is None else row["group_name"],
+            "class_id": row["class_id"], "group_id": row["group_id"], "student_id": row["student_id"], "kind": row["kind"], "kind_name": KIND_NAMES[row["kind"]],
             "sequence": row["sequence"], "conf": row["conf"], "conf_locked": row["kind"] == "final",
             "filename": row["filename"],
             "status": row["status"], "score": result["score"] if result else None, "error": row["error"],
@@ -204,16 +298,25 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         return road_test_state()
 
     @app.post("/api/submissions", status_code=201)
-    def submit(request: Request, group: str = Form(), code: str = Form(), kind: str = Form("mock"),
-               conf: float = Form(0.35), confirm: bool = Form(False), model: UploadFile = File()):
-        """交件。正式路考要 confirm=true（學生確認了「交了就不能重交」），交出的 CONF 就鎖定。"""
-        check_code(request, group, code)
+    def submit(request: Request, group: str | None = Form(None), code: str | None = Form(None),
+               kind: str = Form("mock"), conf: float = Form(0.35), confirm: bool = Form(False),
+               model: UploadFile = File(), authorization: str | None = Header(None)):
+        """交件。正式路考要 confirm=true（學生確認了「交了就不能重交」），交出的 CONF 就鎖定。
+
+        帶課堂金鑰的交到自己選的班級組別（正式路考開關看班級、次數看組別）；
+        沒帶金鑰的照舊用組別代碼（#104 拿掉）。"""
+        if authorization:
+            team: Team = joined_member(student(identity(authorization)))
+            is_open = store.class_final_open(team.class_id)
+        else:
+            check_code(request, group or "", code or "")
+            team, is_open = group, final_open()
         if kind not in road_tests:
             raise HTTPException(400, f"{KIND_NAMES.get(kind, kind)}目前沒有開放。")
         # 以收到交件的時間為準：開關在這一刻是什麼就照什麼，收下之後老師再關也照樣跑完
-        if kind == "final" and not final_open():
+        if kind == "final" and not is_open:
             raise HTTPException(400, "正式路考目前沒有開放，要等老師在課堂上開放才能交。")
-        if kind == "mock" and final_open():
+        if kind == "mock" and is_open:
             raise HTTPException(400, "正式路考開放期間，模擬路考暫停收件，等老師關閉正式路考後再交。")
         if not 0.05 <= conf <= 1:
             raise HTTPException(400, "CONF 要在 0.05 到 1 之間。")
@@ -221,9 +324,9 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             raise HTTPException(400, "正式路考交了就不能重交，請先勾選確認。")
         busy = HTTPException(409, "你們這組已經有一件路考在跑，等它跑完再交。")
         no_final = HTTPException(409, "正式路考每組只能交一次，你們這組已經交過了。要重交請找老師。")
-        if kind == "final" and store.finals_left(group) <= 0:
+        if kind == "final" and store.finals_left(team) <= 0:
             raise no_final
-        if kind == "mock" and store.active(group):
+        if kind == "mock" and store.active(team):
             raise busy
         upload = store.models_dir / f"upload-{uuid.uuid4().hex}.tmp"
         with upload.open("wb") as f:
@@ -238,7 +341,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
                 raise ModelRejected("模型讀不進來，請確認上傳的是訓練程式匯出的 .onnx 檔。") from e
             check_classes(detector.names)
             rt = road_tests[kind]
-            sid = store.add(group, kind, rt.sequence, conf, model.filename or "", upload, rt.frame_count,
+            sid = store.add(team, kind, rt.sequence, conf, model.filename or "", upload, rt.frame_count,
                             priority=1 if kind == "final" else 0)  # 正式路考插到模擬路考前面
         except ModelRejected as e:
             raise HTTPException(422, str(e)) from e
@@ -384,27 +487,6 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         """每組都換新代碼（例如新學期），舊的全部失效。"""
         codes.reset_all()
         return group_table()
-
-    # 金鑰（road-test ADR 0001）：每個請求帶 Authorization: Bearer vcr_sk_…，用 router 的 Key Check 驗（留 60 秒）。
-    # 網站不存金鑰，也不寫進記錄。
-    check_key = verify_key or (lambda _key: UNAVAILABLE)
-
-    def identity(authorization: str | None = Header(None)) -> Identity:
-        scheme, _, key = (authorization or "").partition(" ")
-        if scheme.lower() != "bearer" or not key.strip():
-            raise HTTPException(401, "請貼上你的 API Key。")
-        who = check_key(key)
-        if isinstance(who, Refusal):
-            raise HTTPException(503 if who.reason == "unavailable" else 401, who.message)
-        return who
-
-    def teacher_key(who: Identity = Depends(identity)) -> Identity:
-        """個人金鑰、而且有班級可以管（admin 是所有班級）才是老師。"""
-        if who.kind != "personal":
-            raise HTTPException(403, "課堂金鑰不能用老師的功能，請貼上你的個人 API Key。")
-        if not who.is_teacher:
-            raise HTTPException(403, "你沒有可管理的班級")
-        return who
 
     def managed_class(class_id: int, who: Identity = Depends(teacher_key)) -> tuple[int, str]:
         name = dict(who.classes).get(class_id)
