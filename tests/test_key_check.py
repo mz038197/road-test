@@ -4,12 +4,14 @@
 （router commit bff594f，#94）。router 改了範例就重新複製一份。
 """
 import json
+import threading
+import time
 import logging
 from pathlib import Path
 
 import httpx
 
-from road_test.web.key_check import KeyCheck, Refusal
+from road_test.web.key_check import ClassRef, KeyCheck, Refusal
 
 CONTRACTS = Path(__file__).parent / "contracts" / "key-check"
 KEY = "vcr_sk_" + "a1b2c3d4" * 6
@@ -67,8 +69,7 @@ def test_a_personal_key_comes_back_with_the_classes_it_manages() -> None:
     who = key_check(FakeRouter(contract("personal-accepted"))).check(KEY)
 
     assert (who.kind, who.user_id, who.is_admin) == ("personal", 42, False)
-    assert who.classes == ((56, "週一 程式設計"), (57, "週三 進階班")), "班級帶名稱，畫面才顯示得出來"
-    assert who.manages(56) and not who.manages(99)
+    assert who.classes == (ClassRef(56, "週一 程式設計"), ClassRef(57, "週三 進階班")), "班級帶名稱，畫面才顯示得出來"
     assert who.is_teacher, "classes 不是空的就有老師身分"
 
 
@@ -196,3 +197,39 @@ def test_settings_come_from_vcr_url_and_vcr_service_credential() -> None:
     assert str(router.requests[0].url) == "https://ai.vanscoding.com/internal/key-check", "預設走 router 的公開網址"
     assert str(router.requests[1].url) == "https://staging.test/internal/key-check"
     assert router.requests[1].headers["Authorization"] == "Bearer secret"
+
+
+def test_the_whole_call_gives_up_after_the_deadline_even_when_the_router_trickles(caplog) -> None:
+    """httpx 的 timeout 是每個階段各算；router 一點一點回時，整次呼叫仍要在期限內放棄。"""
+    release = threading.Event()
+
+    def stalled(request: httpx.Request) -> httpx.Response:
+        release.wait(5)  # 像是 router 每次只回一點點，每段都沒超過 httpx 的 timeout
+        return httpx.Response(200, json=contract("classroom-accepted"))
+
+    check = KeyCheck("https://router.test", CREDENTIAL, transport=httpx.MockTransport(stalled),
+                     clock=FakeClock(), deadline=0.2)
+    started = time.monotonic()
+    try:
+        answer = check.check(KEY)
+    finally:
+        release.set()
+
+    assert time.monotonic() - started < 2, "整次呼叫最多等到期限"
+    assert_unavailable_with_one_error(answer, caplog)
+
+
+def test_the_deadline_is_3_seconds_by_default() -> None:
+    assert KeyCheck("https://router.test", CREDENTIAL).deadline == 3.0
+
+
+def test_expired_answers_are_dropped_from_the_cache() -> None:
+    clock = FakeClock()
+    check = key_check(FakeRouter(), clock)
+    for n in range(5):
+        check.check(KEY + str(n))
+
+    clock.now += 61
+    check.check(KEY)
+
+    assert len(check._kept) == 1, "過期的通過結果要清掉，不能一直累積"

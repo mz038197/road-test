@@ -152,25 +152,25 @@ class Store:
                 raise
 
     # 交件
-    def active(self, team: Member) -> sqlite3.Row | None:
+    def active(self, member: Member) -> sqlite3.Row | None:
         with self._db() as db:
             return db.execute(f"SELECT * FROM submissions WHERE group_id = ? AND status IN {ACTIVE}",
-                              (team.group_id,)).fetchone()
+                              (member.group_id,)).fetchone()
 
     def busy(self) -> bool:
         """還有路考在排隊、偵測或補幀（閒置自動關機要等這些跑完）。"""
         with self._db() as db:
             return db.execute(f"SELECT 1 FROM submissions WHERE status IN {ACTIVE} LIMIT 1").fetchone() is not None
 
-    def finals_left(self, group: Member, db: sqlite3.Connection | None = None) -> int:
+    def finals_left(self, member: Member, db: sqlite3.Connection | None = None) -> int:
         """這組還能交幾次正式路考：老師給這組的次數（class_groups.final_tries）− 已經交的
         （收下的都算，出錯的也算；要重交就由老師加次數）。"""
         if db is None:
             with self._db() as db:
-                return self.finals_left(group, db)
-        row = db.execute("SELECT final_tries FROM class_groups WHERE id = ?", (group.group_id,)).fetchone()
+                return self.finals_left(member, db)
+        row = db.execute("SELECT final_tries FROM class_groups WHERE id = ?", (member.group_id,)).fetchone()
         used = db.execute("SELECT COUNT(*) FROM submissions WHERE group_id = ? AND kind = 'final'",
-                          (group.group_id,)).fetchone()[0]
+                          (member.group_id,)).fetchone()[0]
         return (row["final_tries"] if row else 0) - used
 
     def add(self, member: Member, kind: str, sequence: str, conf: float, filename: str, upload: Path,
@@ -276,18 +276,22 @@ class Store:
         """老師把組員改到同一班的另一組：組別不是這個班級的丟 NoSuchGroup，學生還沒選組丟 NotMember。
         之前交的照樣算原本那組。"""
         with self._tx() as db:
-            if db.execute("SELECT 1 FROM class_groups WHERE id = ? AND class_id = ?", (group_id, class_id)).fetchone() is None:
-                raise NoSuchGroup
+            self._require_class_group(db, class_id, group_id)
             if db.execute("UPDATE class_members SET group_id = ? WHERE class_id = ? AND student_id = ?",
                           (group_id, class_id, student_id)).rowcount == 0:
                 raise NotMember
         return self.member(class_id, student_id)
 
+    @staticmethod
+    def _require_class_group(db: sqlite3.Connection, class_id: int, group_id: int) -> None:
+        """組別不是這個班級的就丟 NoSuchGroup。"""
+        if db.execute("SELECT 1 FROM class_groups WHERE id = ? AND class_id = ?", (group_id, class_id)).fetchone() is None:
+            raise NoSuchGroup
+
     def join(self, class_id: int, student_id: int, group_id: int, display_name: str) -> sqlite3.Row:
         """學生選組：組別要是這個班級的（不然 NoSuchGroup），選過就 AlreadyMember。"""
         with self._tx() as db:
-            if db.execute("SELECT 1 FROM class_groups WHERE id = ? AND class_id = ?", (group_id, class_id)).fetchone() is None:
-                raise NoSuchGroup
+            self._require_class_group(db, class_id, group_id)
             try:
                 db.execute("INSERT INTO class_members VALUES (?, ?, ?, ?, ?)",
                            (class_id, student_id, group_id, display_name, now()))

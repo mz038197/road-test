@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import secrets
+import sqlite3
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -21,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from road_test import paths
 from road_test.detector import CLASSES, Detector, ModelRejected
-from road_test.web.key_check import UNAVAILABLE, Identity, Refusal
+from road_test.web.key_check import UNAVAILABLE, ClassRef, Identity, Refusal
 from road_test.web.upload_limit import UploadLimit
 from road_test.web.results import score_result
 from road_test.web.settings import DEFAULT_MAX_UPLOAD_MB
@@ -123,8 +124,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     video_key = _video_key(data_dir)
 
     def video_signature(row, expires: int) -> str:
-        """影片網址的簽章：綁定這次路考（編號＋上傳時間）和到期時間，清空後編號重用也不會對到舊網址，
-        改網址上的到期時間簽章就對不上。"""
+        """影片網址的簽章：綁定這次路考（編號＋上傳時間）和到期時間，改網址上的到期時間簽章就對不上。"""
         message = f"{row['id']}:{row['sequence']}:{row['uploaded_at']}:{expires}".encode()
         return hmac.new(video_key, message, hashlib.sha256).hexdigest()[:32]
 
@@ -168,21 +168,26 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def student_state(who: Identity = Depends(student)):
         """學生進來時看的：自己班級的組別、自己選了哪一組、哪一種路考現在收件、這組還剩幾次正式路考。"""
         groups = store.class_groups(who.class_id)
-        member = store.member(who.class_id, who.student_id)
+        row, member = membership(who)
         return {"class_id": who.class_id, "student_id": who.student_id,
                 "groups": [{"id": g["id"], "name": g["name"]} for g in groups],
                 "message": "" if groups else NOT_OPEN,
-                "member": member_view(member), **class_state(who.class_id),
-                "finals_left": member and store.finals_left(Member(who.class_id, member["group_id"], who.student_id))}
+                "member": member_view(row), **class_state(who.class_id),
+                "finals_left": member and store.finals_left(member)}
+
+    def membership(who: Identity) -> tuple[sqlite3.Row | None, Member | None]:
+        """課堂金鑰的學生在自己班級選的組：組員資料列（含組名）和 Member；還沒選組兩個都是 None。"""
+        row = store.member(who.class_id, who.student_id)
+        return row, row and Member(who.class_id, row["group_id"], who.student_id)
 
     def member_view(row) -> dict | None:
         return row and {"group_id": row["group_id"], "group_name": row["group_name"], "display_name": row["display_name"]}
 
     def joined_member(who: Identity) -> Member:
-        row = store.member(who.class_id, who.student_id)
-        if row is None:
+        _row, member = membership(who)
+        if member is None:
             raise HTTPException(409, "請先選組別，選好之後才能交件、看路考紀錄。")
-        return Member(who.class_id, row["group_id"], who.student_id)
+        return member
 
     @app.get("/api/student/records")
     def student_records(who: Identity = Depends(student)):
@@ -209,9 +214,8 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def viewer(who: Identity = Depends(identity)) -> Viewer:
         """課堂金鑰看自己選的組；個人金鑰看自己能管理的班級（管理頁播放任一組用）。"""
         if who.kind == "classroom":
-            row = store.member(who.class_id, who.student_id)
-            return Viewer(member=row and Member(who.class_id, row["group_id"], who.student_id))
-        return Viewer(classes=frozenset(cid for cid, _name in who.classes))
+            return Viewer(member=membership(who)[1])
+        return Viewer(classes=frozenset(c.id for c in who.classes))
 
     def visible(sid: int, who: Viewer):
         row = store.get(sid)
@@ -240,8 +244,8 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         """交件。正式路考要 confirm=true（學生確認了「交了就不能重交」），交出的 CONF 就鎖定。
 
         交到自己選的班級組別：正式路考開關看班級、次數看組別。"""
-        team = joined_member(who)
-        is_open = store.class_final_open(team.class_id)
+        member = joined_member(who)
+        is_open = store.class_final_open(member.class_id)
         if kind not in road_tests:
             raise HTTPException(400, f"{KIND_NAMES.get(kind, kind)}目前沒有開放。")
         # 以收到交件的時間為準：開關在這一刻是什麼就照什麼，收下之後老師再關也照樣跑完
@@ -255,9 +259,9 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             raise HTTPException(400, "正式路考交了就不能重交，請先勾選確認。")
         busy = HTTPException(409, "你們這組已經有一件路考在跑，等它跑完再交。")
         no_final = HTTPException(409, "你們這組的正式路考次數用完了。要重交請找老師加次數。")
-        if kind == "final" and store.finals_left(team) <= 0:
+        if kind == "final" and store.finals_left(member) <= 0:
             raise no_final
-        if kind == "mock" and store.active(team):
+        if kind == "mock" and store.active(member):
             raise busy
         upload = store.models_dir / f"upload-{uuid.uuid4().hex}.tmp"
         with upload.open("wb") as f:
@@ -272,7 +276,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
                 raise ModelRejected("模型讀不進來，請確認上傳的是訓練程式匯出的 .onnx 檔。") from e
             check_classes(detector.names)
             rt = road_tests[kind]
-            sid = store.add(team, kind, rt.sequence, conf, model.filename or "", upload, rt.frame_count,
+            sid = store.add(member, kind, rt.sequence, conf, model.filename or "", upload, rt.frame_count,
                             priority=1 if kind == "final" else 0)  # 正式路考插到模擬路考前面
         except ModelRejected as e:
             raise HTTPException(422, str(e)) from e
@@ -355,11 +359,11 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             raise HTTPException(404, "找不到訓練程式，請通知老師。")
         return FileResponse(path, media_type="text/x-python; charset=utf-8", filename=path.name)
 
-    def managed_class(class_id: int, who: Identity = Depends(teacher_key)) -> tuple[int, str]:
-        name = dict(who.classes).get(class_id)
-        if name is None:
+    def managed_class(class_id: int, who: Identity = Depends(teacher_key)) -> ClassRef:
+        klass = next((c for c in who.classes if c.id == class_id), None)
+        if klass is None:
             raise HTTPException(404, "找不到這個班級，或你不能管理它。")
-        return class_id, name
+        return klass
 
     def group_view(row, members: list | None = None) -> dict:
         view = {"id": row["id"], "name": row["name"], "final_tries": row["final_tries"]}
@@ -368,26 +372,25 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
                                for m in members if m["group_id"] == row["id"]]
         return view
 
-    def class_view(cls: tuple[int, str]) -> dict:
-        class_id, name = cls
-        members = store.members(class_id)
-        return {"id": class_id, "name": name, "final_open": store.class_final_open(class_id),
-                "groups": [group_view(g, members) for g in store.class_groups(class_id)]}
+    def class_view(klass: ClassRef) -> dict:
+        members = store.members(klass.id)
+        return {"id": klass.id, "name": klass.name, "final_open": store.class_final_open(klass.id),
+                "groups": [group_view(g, members) for g in store.class_groups(klass.id)]}
 
     @app.get("/api/teacher/classes")
     def teacher_classes(who: Identity = Depends(teacher_key)):
         """老師能管理的班級（router 的 Key Check 給的 classes，帶班級名稱）。"""
-        return {"is_admin": who.is_admin, "classes": [{"id": cid, "name": name} for cid, name in who.classes]}
+        return {"is_admin": who.is_admin, "classes": [{"id": c.id, "name": c.name} for c in who.classes]}
 
     @app.get("/api/teacher/classes/{class_id}")
-    def teacher_class(cls: tuple[int, str] = Depends(managed_class)):
+    def teacher_class(klass: ClassRef = Depends(managed_class)):
         """一個班級的組別（每組幾次正式路考）和正式路考開關。"""
-        return class_view(cls)
+        return class_view(klass)
 
     @app.get("/api/teacher/classes/{class_id}/records")
-    def class_records(cls: tuple[int, str] = Depends(managed_class)):
+    def class_records(klass: ClassRef = Depends(managed_class)):
         """這個班級所有組的路考紀錄，新的在前面，每筆帶交件的學生的顯示名稱。"""
-        return [{**summary(r), "display_name": r["display_name"]} for r in store.of_class(cls[0])]
+        return [{**summary(r), "display_name": r["display_name"]} for r in store.of_class(klass.id)]
 
     class NewGroup(BaseModel):
         name: str = Field(min_length=1, max_length=40)
@@ -405,18 +408,18 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     taken = HTTPException(409, "這個班級已經有同名的組別了。")
 
     @app.post("/api/teacher/classes/{class_id}/groups", status_code=201)
-    def add_class_group(body: NewGroup, cls: tuple[int, str] = Depends(managed_class)):
+    def add_class_group(body: NewGroup, klass: ClassRef = Depends(managed_class)):
         """替班級建立組別，設定這組有幾次正式路考。"""
         try:
-            return group_view(store.add_class_group(cls[0], group_name(body.name), body.final_tries))
+            return group_view(store.add_class_group(klass.id, group_name(body.name), body.final_tries))
         except DuplicateGroup:
             raise taken from None
 
     @app.put("/api/teacher/classes/{class_id}/groups/{group_id}")
-    def change_class_group(group_id: int, body: GroupChange, cls: tuple[int, str] = Depends(managed_class)):
+    def change_class_group(group_id: int, body: GroupChange, klass: ClassRef = Depends(managed_class)):
         """改組別的名稱或正式路考次數。"""
         try:
-            row = store.change_class_group(cls[0], group_id, group_name(body.name), body.final_tries)
+            row = store.change_class_group(klass.id, group_id, group_name(body.name), body.final_tries)
         except DuplicateGroup:
             raise taken from None
         if row is None:
@@ -427,10 +430,10 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         group_id: int
 
     @app.put("/api/teacher/classes/{class_id}/members/{student_id}")
-    def move_member(student_id: int, body: Move, cls: tuple[int, str] = Depends(managed_class)):
+    def move_member(student_id: int, body: Move, klass: ClassRef = Depends(managed_class)):
         """把選錯組的學生改到同一班的另一組。之前交的路考照樣算原本那組。"""
         try:
-            row = store.move(cls[0], student_id, body.group_id)
+            row = store.move(klass.id, student_id, body.group_id)
         except NoSuchGroup:
             raise HTTPException(404, "這個班級沒有這個組別。") from None
         except NotMember:
@@ -438,10 +441,10 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         return {"student_id": student_id, **member_view(row)}
 
     @app.put("/api/teacher/classes/{class_id}/final")
-    def switch_class_final(body: FinalSwitch, cls: tuple[int, str] = Depends(managed_class)):
+    def switch_class_final(body: FinalSwitch, klass: ClassRef = Depends(managed_class)):
         """開關這個班級的正式路考，別的班級不受影響。"""
-        store.set_class_final(cls[0], body.open)
-        return class_view(cls)
+        store.set_class_final(klass.id, body.open)
+        return class_view(klass)
 
     app.mount("/", FrontEnd(directory=STATIC, html=True), name="static")
     return app

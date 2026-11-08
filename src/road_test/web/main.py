@@ -40,8 +40,8 @@ def build_app(config: settings.Settings | None = None):
     road_tests = {kind: RoadTest(kind, seq, frame_count(paths.videos_dir() / f"{seq}.mp4"))
                   for kind, seq in SEQUENCES.items()}
     return create_app(paths.data_dir(), partial(OnnxDetector, threads=config.threads), road_tests,
-                      workers=config.workers, max_upload_bytes
-=config.max_upload_bytes, verify_key=KeyCheck.from_env(os.environ).check)
+                      workers=config.workers, max_upload_bytes=config.max_upload_bytes,
+                      verify_key=KeyCheck.from_env(os.environ).check)
 
 
 def main(argv: list[str] | None = None) -> None:

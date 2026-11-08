@@ -18,10 +18,17 @@ import httpx
 DEFAULT_URL = "https://ai.vanscoding.com"
 KEY_PREFIX = "vcr_sk_"
 KEEP_SECONDS = 60  # 通過的結果留多久；router 故障時不延長
-TIMEOUT_SECONDS = 3.0  # 最多等 router 幾秒，逾時當作 unavailable
+TIMEOUT_SECONDS = 3.0  # 整次呼叫最多等 router 幾秒（不是每個階段各算），逾時當作 unavailable
 PREFIX_SHOWN = 11  # 記錄裡只寫金鑰的前幾個字（vcr_sk_ 加 4 個字）
 
 log = logging.getLogger(__name__)  # road_test 底下的 ERROR 會送到 vans-signals（signals.py）
+
+
+@dataclass(frozen=True)
+class ClassRef:
+    """個人金鑰能管理的一個班級：router 的 class_id 和班級名稱。"""
+    id: int
+    name: str
 
 
 @dataclass(frozen=True)
@@ -32,15 +39,12 @@ class Identity:
     class_session_id: int | None = None
     user_id: int | None = None           # 個人金鑰才有
     is_admin: bool = False
-    classes: tuple[tuple[int, str], ...] = ()  # 個人金鑰能管理的班級 (id, 名稱)；admin 是所有班級（router ADR 0083）
+    classes: tuple[ClassRef, ...] = ()  # 個人金鑰能管理的班級；admin 是所有班級（router ADR 0083）
 
     @property
     def is_teacher(self) -> bool:
         """個人金鑰、而且是 admin 或有班級，才有老師身分（ADR 0083）。"""
         return self.kind == "personal" and (self.is_admin or bool(self.classes))
-
-    def manages(self, class_id: int) -> bool:
-        return self.kind == "personal" and any(cid == class_id for cid, _ in self.classes)
 
 
 @dataclass(frozen=True)
@@ -58,10 +62,11 @@ class KeyCheck:
     """router 網址、Service Credential、HTTP transport、時間來源都可以換（測試用 httpx.MockTransport 和假時鐘）。"""
 
     def __init__(self, url: str, credential: str, *, transport: httpx.BaseTransport | None = None,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic, deadline: float = TIMEOUT_SECONDS):
         self._url = url.rstrip("/") + "/internal/key-check"
         self._credential = credential
-        self._http = httpx.Client(transport=transport, timeout=TIMEOUT_SECONDS)
+        self._http = httpx.Client(transport=transport, timeout=deadline)
+        self.deadline = deadline  # 整次呼叫的期限；httpx 的 timeout 只管單一階段
         self._clock = clock
         self._kept: dict[str, tuple[float, Identity]] = {}  # 金鑰的 SHA-256 → (到期時間, 身分)，不存金鑰原文
         self._lock = threading.Lock()
@@ -85,14 +90,38 @@ class KeyCheck:
         answer = self._ask(api_key)
         if isinstance(answer, Identity):
             with self._lock:
+                # 順便清掉過期的，快取只留還在 60 秒內的
+                self._kept = {d: kept for d, kept in self._kept.items() if kept[0] > now}
                 self._kept[digest] = (now + KEEP_SECONDS, answer)
         return answer
+
+    def _post(self, api_key: str) -> httpx.Response:
+        """整次 POST 最多等 self.deadline 秒；超過就丟 httpx.TimeoutException。
+
+        請求在另一條執行緒跑，期限到了就不等它（它自己會在 httpx 的 timeout 後結束，結果丟掉）。
+        """
+        outcome: list = []
+
+        def send() -> None:
+            try:
+                outcome.append(self._http.post(self._url, json={"api_key": api_key},
+                                               headers={"Authorization": f"Bearer {self._credential}"}))
+            except BaseException as e:  # 交回呼叫的執行緒處理
+                outcome.append(e)
+
+        worker = threading.Thread(target=send, name="key-check", daemon=True)
+        worker.start()
+        worker.join(self.deadline)
+        if not outcome:
+            raise httpx.TimeoutException(f"Key Check 超過 {self.deadline:g} 秒")
+        if isinstance(outcome[0], BaseException):
+            raise outcome[0]
+        return outcome[0]
 
     def _ask(self, api_key: str) -> Identity | Refusal:
         prefix = api_key[:PREFIX_SHOWN]
         try:
-            response = self._http.post(self._url, json={"api_key": api_key},
-                                       headers={"Authorization": f"Bearer {self._credential}"})
+            response = self._post(api_key)
         except httpx.HTTPError as e:  # 連不上、逾時
             log.error("Key Check 失敗（%s）：%s，金鑰 %s…", self._url, type(e).__name__, prefix)
             return UNAVAILABLE
@@ -111,6 +140,6 @@ class KeyCheck:
             return Refusal(body["reason"], body["message"])
         if body["kind"] == "personal":
             return Identity(kind="personal", user_id=body["user_id"], is_admin=bool(body["is_admin"]),
-                            classes=tuple((c["id"], c["name"]) for c in body["classes"]))
+                            classes=tuple(ClassRef(c["id"], c["name"]) for c in body["classes"]))
         return Identity(kind=body["kind"], student_id=body["student_id"], class_id=body["class_id"],
                         class_session_id=body["class_session_id"])
