@@ -15,11 +15,36 @@
     <p id="final-banner" class="banner" hidden>正式路考開放中。</p>
   </header>
 
-  <div class="steps-layout">
+  <form id="login" class="card">
+    <label for="api-key">課堂 API Key</label>
+    <p class="muted">貼上 VS Code 擴充裡的課堂 API Key（<code>vcr_sk_</code> 開頭）。金鑰只存在這個分頁，關掉分頁就要重貼。</p>
+    <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="vcr_sk_…" required>
+    <button type="submit">進入</button>
+    <p id="login-error" class="error" role="alert"></p>
+  </form>
+
+  <section class="card" id="not-open" hidden>
+    <h2>這一班還沒開放路考</h2>
+    <p class="muted">老師還沒替你的班級建立組別，等老師建立之後再重新整理這一頁。</p>
+  </section>
+
+  <form id="join" class="card" hidden>
+    <h2>選組別</h2>
+    <p class="muted">第一次進來要選你們這組，並填一個老師認得出來的顯示名稱。選了就鎖定，選錯請找老師改。</p>
+    <label for="join-group">組別</label>
+    <select id="join-group" required></select>
+    <label for="display-name">顯示名稱</label>
+    <input id="display-name" type="text" maxlength="40" autocomplete="off" placeholder="例如：王小明" required>
+    <button type="submit">選定組別</button>
+    <p id="join-error" class="error" role="alert"></p>
+  </form>
+
+  <div class="steps-layout" id="work" hidden>
+
     <nav class="card step-nav" aria-label="交件步驟">
       <ol>
         <li><a href="#step-kind"><span class="step-num" aria-hidden="true">1</span><span class="sr-only">第 1 步：</span>選路考</a></li>
-        <li><a href="#step-group"><span class="step-num" aria-hidden="true">2</span><span class="sr-only">第 2 步：</span>組別與組別代碼</a></li>
+        <li><a href="#step-group"><span class="step-num" aria-hidden="true">2</span><span class="sr-only">第 2 步：</span>組別</a></li>
         <li><a href="#step-model"><span class="step-num" aria-hidden="true">3</span><span class="sr-only">第 3 步：</span>模型檔</a></li>
         <li><a href="#step-conf"><span class="step-num" aria-hidden="true">4</span><span class="sr-only">第 4 步：</span>CONF</a></li>
         <li><a href="#step-send"><span class="step-num" aria-hidden="true">5</span><span class="sr-only">第 5 步：</span>交件</a></li>
@@ -45,18 +70,9 @@
         <section class="card step" id="step-group">
           <div class="step-num" aria-hidden="true">2</div>
           <div class="step-body">
-            <h2>組別與組別代碼</h2>
-            <div class="pair">
-              <div>
-                <label for="group">組別</label>
-                <select id="group" name="group" required></select>
-              </div>
-              <div>
-                <label for="code">組別代碼</label>
-                <input id="code" name="code" type="password" autocomplete="off" required>
-              </div>
-            </div>
-            <p class="muted">組別代碼是老師發給每組的密碼，不要給別組。</p>
+            <h2>組別</h2>
+            <p><span id="me"></span>　<span class="muted" id="finals-left"></span></p>
+            <p class="muted">組別選了就鎖定，選錯請找老師改。<button type="button" id="logout" class="secondary small">換一把金鑰</button></p>
           </div>
         </section>
 
@@ -95,8 +111,7 @@
 
       <section class="card records" id="records-card">
         <h2>我們這組的路考紀錄</h2>
-        <p class="muted" id="records-hint">填好上面的組別和組別代碼，按「看路考紀錄」。</p>
-        <button type="button" class="secondary" id="show-records">看路考紀錄</button>
+        <button type="button" class="secondary" id="show-records">重新整理</button>
         <p id="records-error" class="error" role="alert"></p>
         <div id="records" hidden>
           <h3>正式路考</h3>

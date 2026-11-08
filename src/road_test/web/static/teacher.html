@@ -12,51 +12,66 @@
   <h1>管理頁</h1>
 
   <form id="login" class="card">
-    <label for="password">老師密碼</label>
-    <input id="password" type="password" autocomplete="current-password" required>
+    <label for="api-key">個人 API Key</label>
+    <p class="muted">請貼上你現有的個人 API Key，不要重新產生。重新產生會讓 VS Code 裡的那把金鑰失效。</p>
+    <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="vcr_sk_…" required>
     <button type="submit">登入</button>
     <p id="login-error" class="error" role="alert"></p>
   </form>
 
   <div id="admin" hidden>
-    <p class="muted">已登入（老師密碼只存在這個分頁，關掉分頁就登出）。
+    <p class="muted">已登入（金鑰只存在這個分頁，關掉分頁就登出）。
       <button type="button" id="logout" class="secondary small">登出</button></p>
 
     <section class="card">
+      <h2>班級</h2>
+      <label for="class">要管理的班級</label>
+      <select id="class"></select>
+    </section>
+
+    <section class="card">
       <h2>正式路考</h2>
-      <p class="muted">開放期間：模擬路考暫停收件，排隊中的正式路考先跑。關閉後不收正式路考，但關閉前已經收下的照樣跑完、有成績。</p>
+      <p class="muted">只開關這個班級。開放期間：模擬路考暫停收件，排隊中的正式路考先跑。關閉後不收正式路考，但關閉前已經收下的照樣跑完、有成績。</p>
       <p><span class="muted">目前</span> <span class="score" id="final-state">—</span></p>
       <button type="button" id="final-open" disabled>開放正式路考</button>
       <button type="button" id="final-close" class="secondary" disabled>關閉正式路考</button>
       <div class="confirm-box" id="final-close-confirm" hidden>
-        <p>確定要關閉正式路考嗎？之後交的正式路考會被退件。</p>
+        <p>確定要關閉這個班級的正式路考嗎？之後交的正式路考會被退件。</p>
         <button type="button" data-yes>確定關閉</button>
         <button type="button" class="secondary" data-no>取消</button>
       </div>
     </section>
 
     <section class="card">
-      <h2>組別與組別代碼</h2>
-      <p class="muted">把代碼唸給各組抄下來。學生輸入時不分大小寫，空白、連字號打錯也收。重設後舊代碼馬上失效。</p>
+      <h2>組別</h2>
+      <p class="muted">學生第一次進路考網站時，從這個班級的組別裡選一組。正式路考的次數以組別計算。</p>
       <div class="table-wrap">
         <table id="groups">
-          <thead><tr><th>組別</th><th>組別代碼</th><th class="num">正式路考剩</th><th></th></tr></thead>
+          <thead><tr><th>組別</th><th>組員</th><th class="num">正式路考次數</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
-      <p id="no-groups" class="muted" hidden>還沒有組別，先在下面填組數產生。</p>
-      <div class="row">
-        <label class="inline" for="group-count">組數</label>
-        <input id="group-count" type="number" min="1" max="99" step="1" value="8">
-        <button type="button" id="set-count">套用</button>
-        <button type="button" id="reset-all" class="secondary">全部重設代碼</button>
+      <p id="no-groups" class="muted" hidden>這個班級還沒有組別，學生會看到「這一班還沒開放路考」。</p>
+      <form id="new-group" class="row">
+        <label class="inline" for="group-name">組名</label>
+        <input id="group-name" type="text" maxlength="40" placeholder="第 1 組" required>
+        <label class="inline" for="group-tries">正式路考次數</label>
+        <input id="group-tries" type="number" min="1" max="99" step="1" value="1" required>
+        <button type="submit">新增組別</button>
+      </form>
+      <p class="muted">要再給某一組一次正式路考（例如模型出錯要重交），就把這組的次數加 1 再按「儲存次數」。</p>
+    </section>
+
+    <section class="card">
+      <h2>組員</h2>
+      <p class="muted">學生選組時自己填顯示名稱，選了就鎖定。選錯組的，在這裡改到正確的組；之前交的路考照樣算原本那組。</p>
+      <div class="table-wrap">
+        <table id="members">
+          <thead><tr><th>顯示名稱</th><th>組別</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
-      <p class="muted">套用：組別改成 01 到組數，新的組產生代碼，原本的組保留代碼；組數變少時多的組刪掉（路考紀錄留著）。</p>
-      <div class="confirm-box" id="reset-all-confirm" hidden>
-        <p>確定要每組都換新代碼嗎？舊代碼全部失效，要重新發給各組。</p>
-        <button type="button" data-yes>確定重設</button>
-        <button type="button" class="secondary" data-no>取消</button>
-      </div>
+      <p id="no-members" class="muted" hidden>還沒有學生選組。</p>
     </section>
 
     <section class="card">
@@ -64,29 +79,18 @@
       <div class="row">
         <label class="inline" for="filter">組別</label>
         <select id="filter"><option value="">全部</option></select>
-        <button type="button" id="reload" class="secondary">重新整理</button>
+        <button type="button" id="reload" class="secondary small">重新整理</button>
       </div>
-      <p class="muted">點「播放」在這個分頁打開結果頁，按播放器的「全螢幕」給全班看；看完按瀏覽器的上一頁回來。</p>
       <div class="table-wrap">
         <table id="records">
-          <thead><tr><th>組別</th><th>路考</th><th>上傳時間</th><th>檔名</th><th class="num">CONF</th><th>狀態</th>
-            <th class="num">成績</th><th></th></tr></thead>
+          <thead><tr><th>組別</th><th>交件的學生</th><th>路考</th><th>上傳時間</th><th>檔名</th><th class="num">CONF</th>
+            <th>狀態</th><th class="num">成績</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
-      <p id="no-records" class="muted" hidden>還沒有路考紀錄。</p>
+      <p id="no-records" class="muted" hidden>這個班級還沒有路考紀錄。</p>
     </section>
 
-    <section class="card">
-      <h2>清空</h2>
-      <p class="muted">學期結束時用：刪掉所有交件、結果、路考紀錄和還給各組的正式路考次數（交上來的模型檔也刪）。組別代碼和正式路考開關不動。清空後找不回來。</p>
-      <button type="button" id="clear" class="danger">清空交件和路考紀錄…</button>
-      <div class="confirm-box" id="clear-confirm" hidden>
-        <p><strong>確定要清空嗎？</strong>目前有 <span id="clear-count">0</span> 筆路考紀錄，清空後找不回來。</p>
-        <button type="button" class="danger" data-yes>確定清空</button>
-        <button type="button" class="secondary" data-no>取消</button>
-      </div>
-    </section>
 
     <p id="notice" class="notice" role="status"></p>
     <p id="error" class="error" role="alert"></p>

@@ -1,4 +1,4 @@
-"""交件、偵測結果、成績都存在路考資料夾的 SQLite（road_test.db），模型檔存在 submissions/。
+"""交件、偵測結果、成績都存在路考資料夾的 SQLite（road_test_v2.db），模型檔存在 submissions/。
 
 部署時路考資料夾就是 Fly 的 volume，機器關掉再開，排隊和結果都還在。
 每次操作開一個新連線，worker 執行緒和 API 可以同時用。
@@ -6,6 +6,7 @@
 import json
 import sqlite3
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -15,7 +16,16 @@ from road_test.detector import CLASSES
 QUEUED, SCORING, FILLING, DONE, FAILED = "queued", "scoring", "filling", "done", "failed"
 # 「每組同時一件」算的是這些狀態：成績出來了但其餘的幀還沒補完，也算還在跑
 ACTIVE = (QUEUED, SCORING, FILLING)
-FINAL_TRIES = 1  # 正式路考每組幾次；老師還次數（#10）就在 final_returns 加一列
+DATABASE = "road_test_v2.db"
+
+
+@dataclass(frozen=True)
+class Member:
+    """用課堂金鑰交件的人：哪個班級、哪個組別、哪個學生（road-test ADR 0001）。"""
+    class_id: int
+    group_id: int
+    student_id: int
+
 
 
 class Busy(Exception):
@@ -25,10 +35,28 @@ class Busy(Exception):
 class NoFinalLeft(Exception):
     """這組的正式路考次數用完了。"""
 
+
+class DuplicateGroup(Exception):
+    """這個班級已經有同名的組別。"""
+
+
+class AlreadyMember(Exception):
+    """這個學生在這個班級已經選過組別（選了就鎖定）。"""
+
+
+class NoSuchGroup(Exception):
+    """這個班級沒有這個組別。"""
+
+
+class NotMember(Exception):
+    """這個學生在這個班級還沒選組。"""
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS submissions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    grp         TEXT NOT NULL,
+    class_id    INTEGER NOT NULL,          -- router 的 class_id、組別、交件的學生
+    group_id    INTEGER NOT NULL,          -- 交件時的組別（老師之後改學生的組，這筆照樣算原本那組）
+    student_id  INTEGER NOT NULL,
     kind        TEXT NOT NULL,             -- mock | final
     sequence    TEXT NOT NULL,
     conf        REAL NOT NULL,             -- 交件時選的 CONF
@@ -45,14 +73,25 @@ CREATE TABLE IF NOT EXISTS submissions (
     scored_at   TEXT,
     done_at     TEXT
 );
-CREATE TABLE IF NOT EXISTS settings (    -- 老師的開關，例如 final_open（正式路考開放中）
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL                    -- JSON
-);
-CREATE TABLE IF NOT EXISTS final_returns (  -- 老師還給某組的正式路考次數（#10），一列 = 多一次
+CREATE TABLE IF NOT EXISTS class_groups (  -- 組別：老師替自己的班級建立（road-test ADR 0001）
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    grp         TEXT NOT NULL,
-    returned_at TEXT NOT NULL
+    class_id    INTEGER NOT NULL,          -- router 的整數 class_id
+    name        TEXT NOT NULL,
+    final_tries INTEGER NOT NULL,          -- 這組有幾次正式路考
+    created_at  TEXT NOT NULL,
+    UNIQUE (class_id, name)
+);
+CREATE TABLE IF NOT EXISTS class_members (  -- 組員：一個學生在一個班只屬於一組，選了就鎖定（選錯由老師改）
+    class_id     INTEGER NOT NULL,
+    student_id   INTEGER NOT NULL,         -- router 的 student_id
+    group_id     INTEGER NOT NULL REFERENCES class_groups (id),
+    display_name TEXT NOT NULL,            -- router 不給名字，學生選組時自己填
+    joined_at    TEXT NOT NULL,
+    PRIMARY KEY (class_id, student_id)
+);
+CREATE TABLE IF NOT EXISTS class_finals (  -- 正式路考開關，每個班級一個；沒有列就是關著
+    class_id INTEGER PRIMARY KEY,
+    open     INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS detections (
     submission_id INTEGER NOT NULL,
@@ -61,6 +100,10 @@ CREATE TABLE IF NOT EXISTS detections (
     PRIMARY KEY (submission_id, frame)
 );
 """
+
+
+# 交件加上組別現在的名稱（老師改名之後紀錄跟著改）
+WITH_GROUP_NAME = "SELECT s.*, g.name AS group_name FROM submissions s LEFT JOIN class_groups g ON g.id = s.group_id"
 
 
 def now() -> str:
@@ -80,7 +123,8 @@ class Store:
     def __init__(self, data_dir: Path):
         self.models_dir = data_dir / "submissions"
         self.models_dir.mkdir(parents=True, exist_ok=True)
-        self.path = data_dir / "road_test.db"
+        # road_test_v2.db：改成依班級分組時重新開始（road-test ADR 0001，不搬舊資料）；舊的 road_test.db 不讀
+        self.path = data_dir / DATABASE
         with self._db() as db:
             db.executescript(SCHEMA)
             # 上次關機時正在偵測計分幀的，重新排隊；補幀做到一半的，下次從沒做完的幀接著做
@@ -108,81 +152,75 @@ class Store:
                 raise
 
     # 交件
-    def active(self, group: str) -> sqlite3.Row | None:
+    def active(self, member: Member) -> sqlite3.Row | None:
         with self._db() as db:
-            return db.execute(f"SELECT * FROM submissions WHERE grp = ? AND status IN {ACTIVE}", (group,)).fetchone()
+            return db.execute(f"SELECT * FROM submissions WHERE group_id = ? AND status IN {ACTIVE}",
+                              (member.group_id,)).fetchone()
 
     def busy(self) -> bool:
         """還有路考在排隊、偵測或補幀（閒置自動關機要等這些跑完）。"""
         with self._db() as db:
             return db.execute(f"SELECT 1 FROM submissions WHERE status IN {ACTIVE} LIMIT 1").fetchone() is not None
 
-    def finals_left(self, group: str, db: sqlite3.Connection | None = None) -> int:
-        """這組還能交幾次正式路考：FINAL_TRIES + 老師還的次數 − 已經交的（收下的都算，出錯的也算）。"""
+    def finals_left(self, member: Member, db: sqlite3.Connection | None = None) -> int:
+        """這組還能交幾次正式路考：老師給這組的次數（class_groups.final_tries）− 已經交的
+        （收下的都算，出錯的也算；要重交就由老師加次數）。"""
         if db is None:
             with self._db() as db:
-                return self.finals_left(group, db)
-        used = db.execute("SELECT COUNT(*) FROM submissions WHERE grp = ? AND kind = 'final'", (group,)).fetchone()[0]
-        returned = db.execute("SELECT COUNT(*) FROM final_returns WHERE grp = ?", (group,)).fetchone()[0]
-        return FINAL_TRIES + returned - used
+                return self.finals_left(member, db)
+        row = db.execute("SELECT final_tries FROM class_groups WHERE id = ?", (member.group_id,)).fetchone()
+        used = db.execute("SELECT COUNT(*) FROM submissions WHERE group_id = ? AND kind = 'final'",
+                          (member.group_id,)).fetchone()[0]
+        return (row["final_tries"] if row else 0) - used
 
-    def return_final(self, group: str) -> None:
-        """還給這組一次正式路考（#10 管理頁用）。"""
-        with self._db() as db:
-            db.execute("INSERT INTO final_returns (grp, returned_at) VALUES (?, ?)", (group, now()))
-
-    def add(self, group: str, kind: str, sequence: str, conf: float, filename: str, upload: Path,
+    def add(self, member: Member, kind: str, sequence: str, conf: float, filename: str, upload: Path,
             frames_total: int, priority: int = 0) -> int:
-        """收件並排隊，模型檔改名成「組別_路考種類_上傳時間_編號.onnx」。
+        """收件並排隊，模型檔改名成「c班級-g組別-s學生_路考種類_上傳時間_編號.onnx」。
 
         模擬路考：這組有任何一件在跑就丟 Busy。正式路考：次數用完丟 NoFinalLeft；
         不用等這組的模擬路考跑完（正式路考開放時，模擬路考可能還在補幀）。
         """
         with self._tx() as db:
             if kind == "final":
-                if self.finals_left(group, db) <= 0:
+                if self.finals_left(member, db) <= 0:
                     raise NoFinalLeft
-                busy = db.execute(f"SELECT 1 FROM submissions WHERE grp = ? AND kind = 'final' AND status IN {ACTIVE}",
-                                  (group,)).fetchone()
+                busy = db.execute(f"SELECT 1 FROM submissions WHERE group_id = ? AND kind = 'final' AND status IN {ACTIVE}",
+                                  (member.group_id,)).fetchone()
             else:
-                busy = db.execute(f"SELECT 1 FROM submissions WHERE grp = ? AND status IN {ACTIVE}", (group,)).fetchone()
+                busy = db.execute(f"SELECT 1 FROM submissions WHERE group_id = ? AND status IN {ACTIVE}",
+                                  (member.group_id,)).fetchone()
             if busy:
                 raise Busy
             uploaded = now()
             cur = db.execute(
-                "INSERT INTO submissions (grp, kind, sequence, conf, filename, priority, status, frames_total, uploaded_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (group, kind, sequence, conf, filename, priority, QUEUED, frames_total, uploaded))
+                "INSERT INTO submissions (class_id, group_id, student_id, kind, sequence, conf, filename, priority,"
+                " status, frames_total, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (member.class_id, member.group_id, member.student_id, kind, sequence, conf, filename, priority,
+                 QUEUED, frames_total, uploaded))
             sid = cur.lastrowid
-            name = f"{group}_{kind}_{uploaded[:19].replace(':', '').replace('-', '')}_{sid}.onnx"
+            prefix = f"c{member.class_id}-g{member.group_id}-s{member.student_id}"
+            name = f"{prefix}_{kind}_{uploaded[:19].replace(':', '').replace('-', '')}_{sid}.onnx"
             upload.replace(self.models_dir / name)
             db.execute("UPDATE submissions SET model = ? WHERE id = ?", (name, sid))
             return sid
 
     def get(self, sid: int) -> sqlite3.Row | None:
         with self._db() as db:
-            return db.execute("SELECT * FROM submissions WHERE id = ?", (sid,)).fetchone()
+            return db.execute(f"{WITH_GROUP_NAME} WHERE s.id = ?", (sid,)).fetchone()
 
-    def clear(self) -> None:
-        """學期結束清空：交件、偵測框、成績、還的正式路考次數，還有交上來的模型檔。開關（settings）不動。
-
-        正在跑的那件會在 worker 下一次寫入時發現自己不見了，自然結束（見 save_detections）。
-        收件中的暫存檔（upload-*.tmp）不刪，那件收完就是清空後的第一件。
-        """
-        with self._tx() as db:
-            for table in ("submissions", "detections", "final_returns"):
-                db.execute(f"DELETE FROM {table}")
-        for path in self.models_dir.glob("*.onnx"):
-            path.unlink(missing_ok=True)
-
-    def everything(self) -> list[sqlite3.Row]:
-        """所有組的交件，新的在前面（管理頁的路考紀錄）。"""
+    def of_class(self, class_id: int) -> list[sqlite3.Row]:
+        """這個班級所有組別的交件，新的在前面；display_name 是交件的學生現在的顯示名稱（管理頁用）。"""
         with self._db() as db:
-            return db.execute("SELECT * FROM submissions ORDER BY id DESC").fetchall()
+            return db.execute(
+                "SELECT s.*, g.name AS group_name, m.display_name FROM submissions s"
+                " LEFT JOIN class_groups g ON g.id = s.group_id"
+                " LEFT JOIN class_members m ON m.class_id = s.class_id AND m.student_id = s.student_id"
+                " WHERE s.class_id = ? ORDER BY s.id DESC", (class_id,)).fetchall()
 
-    def of_group(self, group: str) -> list[sqlite3.Row]:
+    def of_class_group(self, group_id: int) -> list[sqlite3.Row]:
+        """這個班級組別的交件，新的在前面。"""
         with self._db() as db:
-            return db.execute("SELECT * FROM submissions WHERE grp = ? ORDER BY id DESC", (group,)).fetchall()
+            return db.execute(f"{WITH_GROUP_NAME} WHERE s.group_id = ? ORDER BY s.id DESC", (group_id,)).fetchall()
 
     def position(self, sid: int) -> int | None:
         """排第幾位（1 起算），不在排隊就是 None。排的順序跟 worker 拿的順序一樣。"""
@@ -195,15 +233,80 @@ class Store:
                 (QUEUED, row["priority"], row["priority"], row["id"])).fetchone()[0]
             return ahead + 1
 
-    # 老師的開關（存在 SQLite，重開機還在）
-    def setting(self, key: str, default=None):
+    # 班級的組別和正式路考開關（老師用個人金鑰管理）
+    def class_groups(self, class_id: int) -> list[sqlite3.Row]:
         with self._db() as db:
-            row = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
-            return json.loads(row[0]) if row else default
+            return db.execute("SELECT * FROM class_groups WHERE class_id = ? ORDER BY id", (class_id,)).fetchall()
 
-    def set_setting(self, key: str, value) -> None:
+    def add_class_group(self, class_id: int, name: str, final_tries: int) -> sqlite3.Row:
+        """建立組別；同一班已經有同名的組就丟 DuplicateGroup。"""
+        try:
+            with self._db() as db:
+                cur = db.execute("INSERT INTO class_groups (class_id, name, final_tries, created_at) VALUES (?, ?, ?, ?)",
+                                 (class_id, name, final_tries, now()))
+                return db.execute("SELECT * FROM class_groups WHERE id = ?", (cur.lastrowid,)).fetchone()
+        except sqlite3.IntegrityError:
+            raise DuplicateGroup from None
+
+    def change_class_group(self, class_id: int, group_id: int, name: str | None,
+                           final_tries: int | None) -> sqlite3.Row | None:
+        """改名稱或正式路考次數（None 就不改）；這個班級沒有這組回 None。"""
+        try:
+            with self._db() as db:
+                db.execute("UPDATE class_groups SET name = COALESCE(?, name), final_tries = COALESCE(?, final_tries)"
+                           " WHERE id = ? AND class_id = ?", (name, final_tries, group_id, class_id))
+                return db.execute("SELECT * FROM class_groups WHERE id = ? AND class_id = ?",
+                                  (group_id, class_id)).fetchone()
+        except sqlite3.IntegrityError:
+            raise DuplicateGroup from None
+
+    def member(self, class_id: int, student_id: int) -> sqlite3.Row | None:
+        """這個學生在這個班級選的組（含組名），還沒選是 None。"""
         with self._db() as db:
-            db.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", (key, json.dumps(value, ensure_ascii=False)))
+            return db.execute("SELECT m.*, g.name AS group_name FROM class_members m JOIN class_groups g ON g.id = m.group_id"
+                              " WHERE m.class_id = ? AND m.student_id = ?", (class_id, student_id)).fetchone()
+
+    def members(self, class_id: int) -> list[sqlite3.Row]:
+        """這個班級的組員（含 group_id、顯示名稱），照顯示名稱排。"""
+        with self._db() as db:
+            return db.execute("SELECT * FROM class_members WHERE class_id = ? ORDER BY display_name, student_id",
+                              (class_id,)).fetchall()
+
+    def move(self, class_id: int, student_id: int, group_id: int) -> sqlite3.Row:
+        """老師把組員改到同一班的另一組：組別不是這個班級的丟 NoSuchGroup，學生還沒選組丟 NotMember。
+        之前交的照樣算原本那組。"""
+        with self._tx() as db:
+            self._require_class_group(db, class_id, group_id)
+            if db.execute("UPDATE class_members SET group_id = ? WHERE class_id = ? AND student_id = ?",
+                          (group_id, class_id, student_id)).rowcount == 0:
+                raise NotMember
+        return self.member(class_id, student_id)
+
+    @staticmethod
+    def _require_class_group(db: sqlite3.Connection, class_id: int, group_id: int) -> None:
+        """組別不是這個班級的就丟 NoSuchGroup。"""
+        if db.execute("SELECT 1 FROM class_groups WHERE id = ? AND class_id = ?", (group_id, class_id)).fetchone() is None:
+            raise NoSuchGroup
+
+    def join(self, class_id: int, student_id: int, group_id: int, display_name: str) -> sqlite3.Row:
+        """學生選組：組別要是這個班級的（不然 NoSuchGroup），選過就 AlreadyMember。"""
+        with self._tx() as db:
+            self._require_class_group(db, class_id, group_id)
+            try:
+                db.execute("INSERT INTO class_members VALUES (?, ?, ?, ?, ?)",
+                           (class_id, student_id, group_id, display_name, now()))
+            except sqlite3.IntegrityError:
+                raise AlreadyMember from None
+        return self.member(class_id, student_id)
+
+    def set_class_final(self, class_id: int, is_open: bool) -> None:
+        with self._db() as db:
+            db.execute("INSERT OR REPLACE INTO class_finals VALUES (?, ?)", (class_id, int(is_open)))
+
+    def class_final_open(self, class_id: int) -> bool:
+        with self._db() as db:
+            row = db.execute("SELECT open FROM class_finals WHERE class_id = ?", (class_id,)).fetchone()
+            return bool(row and row[0])
 
     # worker 用
     def claim_queued(self) -> sqlite3.Row | None:
@@ -223,7 +326,7 @@ class Store:
     def save_detections(self, sid: int, frames: dict[int, list[dict]]) -> None:
         with self._tx() as db:
             if db.execute("SELECT 1 FROM submissions WHERE id = ?", (sid,)).fetchone() is None:
-                return  # 偵測到一半被清空了，框不用留
+                return  # 這件交件已經不在了，框不用留
             db.executemany("INSERT OR REPLACE INTO detections VALUES (?, ?, ?)",
                            [(sid, n, pack(boxes)) for n, boxes in frames.items()])
             done = db.execute("SELECT COUNT(*) FROM detections WHERE submission_id = ?", (sid,)).fetchone()[0]

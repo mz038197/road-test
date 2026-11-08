@@ -19,7 +19,7 @@ def training_video(data_dir):
 def test_anyone_can_download_the_training_video_without_a_group_code(client, training_video) -> None:
     response = client.get("/downloads/0016E5.mp4")
 
-    assert response.status_code == 200, f"訓練影片不需要組別代碼就能下載：{response.text}"
+    assert response.status_code == 200, f"訓練影片不需要金鑰就能下載：{response.text}"
     assert response.content == training_video
     assert response.headers["content-type"] == "video/mp4"
     assert "attachment" in response.headers.get("content-disposition", ""), "按連結要直接存檔，不是在分頁裡播"
@@ -42,7 +42,7 @@ def test_missing_training_video_says_so_in_chinese(client) -> None:
 def test_anyone_can_download_the_local_training_program(client) -> None:
     response = client.get("/downloads/train_yolo.py")
 
-    assert response.status_code == 200, f"本機訓練程式不需要組別代碼就能下載：{response.text}"
+    assert response.status_code == 200, f"本機訓練程式不需要金鑰就能下載：{response.text}"
     assert response.content == (STUDENT / "train_yolo.py").read_bytes(), "下載的要是 repo 裡 student/ 的那一支"
     assert "attachment" in response.headers.get("content-disposition", ""), "按連結要直接存成 train_yolo.py"
 

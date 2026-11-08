@@ -1,5 +1,5 @@
 """模擬路考的 CONF 滑桿：用新的 CONF 重算存下來的框（HTTP API）。"""
-from conftest import CAR, PED, as_group, model, run_queue, set_final, submit
+from conftest import CAR, PED, as_group, model, records, run_queue, set_final, submit
 
 # 行人只有 0.3 的信心分數：CONF 0.35 時算漏看，CONF 0.2 時算看見；車 0.9 一直都看見。
 SHY = model({2: [("pedestrian", PED, 0.3)], 5: [("pedestrian", PED, 0.3)], 8: [("car", CAR, 0.9)]})
@@ -24,7 +24,7 @@ def test_a_lower_conf_rescores_the_mock_without_queueing_again(client) -> None:
     after = client.get(f"/api/submissions/{sid}", headers=as_group("01")).json()
     assert after["result"] == before["result"] and after["conf"] == 0.35, "重算只是看看，不改交件的成績"
     assert after["position"] is None and after["status"] == "done", "重算不會排隊"
-    assert len(client.get("/api/groups/01/records", headers=as_group("01")).json()) == 1, "重算不會多一筆路考紀錄"
+    assert len(records(client, "01")) == 1, "重算不會多一筆路考紀錄"
     assert submit(client, group="01").status_code == 201, "重算不算這組在跑的路考"
 
 

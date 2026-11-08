@@ -9,6 +9,7 @@ description = "卷積神經網路的路考網站：答案產生、計分、交�
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.162.0",
+    "httpx>=0.28.1",
     "numpy>=2",
     "onnxruntime>=1.31.1",
     "opencv-python-headless>=5.0.0.93",
@@ -24,7 +25,6 @@ road-test-site = "road_test.web.main:main"
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
     "pytest>=8.0",
     "pyyaml>=6.0.3",
 ]

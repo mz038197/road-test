@@ -1648,6 +1648,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "numpy" },
     { name = "onnxruntime" },
     { name = "opencv-python-headless" },
@@ -1659,7 +1660,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
     { name = "pyyaml" },
 ]
@@ -1673,6 +1673,7 @@ train = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.162.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy", specifier = ">=2" },
     { name = "onnxruntime", specifier = ">=1.31.1" },
     { name = "opencv-python-headless", specifier = ">=5.0.0.93" },
@@ -1684,7 +1685,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.28.1" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
 ]

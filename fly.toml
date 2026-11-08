@@ -8,7 +8,7 @@ primary_region = "nrt"   # 東京，離台灣近
   ROAD_TEST_IDLE_MINUTES = "10"
   # ROAD_TEST_WORKERS、ROAD_TEST_THREADS 不設：核心數 ÷ 2 個 worker、每個 2 個執行緒，升級機器時自動跟著變多
 
-# 路考影片、答案、組別代碼、交件、成績（road_test.db）都在這個 volume，重新部署不會不見
+# 路考影片、答案、組別、組員、交件、成績（road_test_v2.db）都在這個 volume，重新部署不會不見
 [mounts]
   source = "road_test_data"
   destination = "/data"
