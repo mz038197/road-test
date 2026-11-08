@@ -2,7 +2,7 @@
 
 狀態：已採用。對應 vans_coding_router 的 ADR 0080（road-test 是 Partner Service）。
 
-路考網站不再用組別代碼和共用的老師密碼。學生帶課堂金鑰，老師帶個人金鑰，每個請求都放在 `Authorization: Bearer`。網站用 `vans-auth` 問 router 的 key-check，通過的結果留 60 秒。金鑰放在瀏覽器的 `sessionStorage`，網站不存、不寫進記錄。`<video>` 不能帶標頭，所以照舊用簽章網址，只發給驗過金鑰的人。
+路考網站不再用組別代碼和共用的老師密碼。學生帶課堂金鑰，老師帶個人金鑰，每個請求都放在 `Authorization: Bearer`。網站自己呼叫 router 的 key-check（router ADR 0082，沒有共用套件），通過的結果留 60 秒，被拒時直接顯示 router 給的訊息。金鑰放在瀏覽器的 `sessionStorage`，網站不存、不寫進記錄。`<video>` 不能帶標頭，所以照舊用簽章網址，只發給驗過金鑰的人。
 
 組別依 router 的整數 `class_id` 分開。老師替自己的班級建立組別，並設定每組幾次正式路考；admin 可以管理所有班級。正式路考的開關也依班級分開。班級還沒建立組別時，學生看到「這一班還沒開放路考」。學生第一次進來，從自己班級的組別裡選一組並填顯示名稱，之後鎖定；選錯由老師改。router 不給名字，所以顯示名稱存在路考網站。交件紀錄存 `student_id`，看得出組裡是誰交的。
 
