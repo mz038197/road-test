@@ -5,6 +5,7 @@
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 import time
 import uuid
@@ -14,7 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -28,6 +29,8 @@ from road_test.web.settings import DEFAULT_MAX_UPLOAD_MB
 from road_test.web.store import Busy, NoFinalLeft, Store
 from road_test.web.teacher import TARGET as TEACHER_TARGET, is_teacher, teacher_check
 from road_test.web.worker import Worker
+
+log = logging.getLogger(__name__)
 
 STATIC = Path(__file__).parent / "static"
 KIND_NAMES = {"mock": "模擬路考", "final": "正式路考"}
@@ -100,6 +103,12 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     app.state.store = store
     app.add_middleware(UploadLimit, max_bytes=max_upload_bytes)
     app.state.worker = worker
+
+    @app.exception_handler(Exception)
+    async def unexpected(request: Request, exc: Exception):
+        # 記在 road_test 底下才會送到 vans-signals（見 signals.py）；不記查詢字串，網址上可能有簽章
+        log.error("%s %s 出錯", request.method, request.url.path, exc_info=exc)
+        return JSONResponse({"detail": "Internal server error"}, status_code=500)
     guesses = FailureLimit(clock)  # 組別代碼、老師密碼猜錯太多次就暫時 429
     teacher = teacher_check(teacher_password, guesses)
 

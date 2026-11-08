@@ -60,6 +60,8 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 
 `ROAD_TEST_TEACHER_PASSWORD`：老師密碼（Fly 上放 secrets）。沒設定的話，管理頁和老師的 API 一律拒絕。
 
+`VANS_SIGNALS_URL`、`VANS_SIGNALS_TOKEN`：網站的 ERROR 記錄（交件偵測失敗、請求裡沒想到的錯）送到 vans-signals，Slack 上 Source 是 `road-test`（Fly 上放 secrets）。兩個都設定才送，本機不用設定。送的時候不等、約 2 秒逾時、不重送，送失敗不影響使用者。見 `docs/adr/0002-errors-go-to-vans-signals.md`。
+
 ### 管理頁 `/teacher.html`
 
 用老師密碼登入（密碼只存在這個分頁，關掉分頁就登出）：
@@ -130,6 +132,7 @@ uv run make-answers --camvid <CamVid資料夾> --out <答案.json>
 | 程式、前端、學生訓練程式 | Docker 映像（`Dockerfile`），只有 `pyproject.toml`、`uv.lock`、`src/`、`student/` |
 | 路考影片、答案、組別代碼、交件、成績、路考紀錄 | volume `road_test_data`（5 GB，東京 nrt），掛在 `/data` = `ROAD_TEST_DATA`。重新部署不會不見 |
 | 老師密碼 | Fly secrets `ROAD_TEST_TEACHER_PASSWORD` |
+| 錯誤送到 vans-signals | Fly secrets `VANS_SIGNALS_URL`、`VANS_SIGNALS_TOKEN`（road-test 自己的 token，它的 SHA-256 加進 vans-signals 的 `SIGNALS_TOKENS`，名稱 `road-test`） |
 | GitHub Actions 部署用的 token | repo secret `FLY_API_TOKEN`（`flyctl tokens create deploy -a road-test`） |
 
 機器：平常 1 台 `performance-4x`（4 個專用 CPU），2 個 worker × 2 個執行緒。沒人連線、也沒有路考在跑（Fly 的健康檢查打 `/healthz`，不算有人連線），10 分鐘後網站自己結束、機器停下來（按秒計費，停著只收 volume 和映像的儲存費）；有人連進來時 Fly 自動開機，約幾秒。Fly 自己的 auto_stop 是關掉的：它只看連線，學生關掉結果頁時背景還在補幀也會被關掉。
