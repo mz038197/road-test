@@ -13,7 +13,7 @@ function saveGroup(group, code) {
   try { localStorage.setItem("road-test-group", JSON.stringify({ group, code })); } catch { /* 無痕視窗存不了，沒關係 */ }
 }
 
-// 老師密碼：管理頁（teacher.html）登入後只存在這個分頁（sessionStorage），關掉分頁就要重打。
+// 老師密碼：舊版管理頁（teacher-password.html）登入後只存在這個分頁（sessionStorage），關掉分頁就要重打。
 // 管理頁在同一個分頁打開 result.html，結果頁就帶老師密碼，看得到任一組。
 const TEACHER_KEY = "road-test-teacher";
 
@@ -27,12 +27,29 @@ function saveTeacher(password) {
   } catch { /* 存不了就每次重打 */ }
 }
 
-// 呼叫 API 時帶的身分標頭：老師登入了就帶老師密碼，不然帶記住的組別和組別代碼。
+// router 的金鑰（課堂金鑰或個人金鑰，road-test ADR 0001）：只存在這個分頁（sessionStorage），關掉分頁就不見；
+// 不放 cookie、localStorage 或網址。api() 每個請求都帶 Authorization: Bearer。
+const API_KEY = "road-test-api-key";
+
+function loadKey() {
+  try { return sessionStorage.getItem(API_KEY) || ""; } catch { return ""; }
+}
+
+function saveKey(key) {
+  try {
+    if (key) sessionStorage.setItem(API_KEY, key); else sessionStorage.removeItem(API_KEY);
+  } catch { /* 存不了就每次重貼 */ }
+}
+
+// 呼叫 API 時帶的身分標頭：有金鑰就帶 Authorization；
+// 舊的身分（組別代碼、老師密碼，拿掉前還在用）：老師登入了就帶老師密碼，不然帶記住的組別和組別代碼。
 function authHeaders() {
+  const key = loadKey();
+  const bearer = key ? { Authorization: `Bearer ${key}` } : {};
   const teacher = loadTeacher();
-  if (teacher) return { "X-Teacher-Password": teacher };
+  if (teacher) return { ...bearer, "X-Teacher-Password": teacher };
   const { group, code } = loadGroup();
-  return group ? { "X-Group": group, "X-Group-Code": code || "" } : {};
+  return group ? { ...bearer, "X-Group": group, "X-Group-Code": code || "" } : bearer;
 }
 
 // 呼叫 API；帶上 authHeaders()。失敗時丟出伺服器給的中文原因

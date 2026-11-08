@@ -6,11 +6,13 @@
 import json
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from road_test.detector import ModelRejected
 from road_test.web.app import RoadTest, create_app
+from road_test.web.key_check import KeyCheck
 
 GROUPS = {"01": "apple", "02": "banana", "03": "cherry"}
 TEACHER = "teacher-secret"
@@ -55,6 +57,47 @@ def model(boxes: dict | None = None, names: list[str] = CLASSES, crash: bool = F
     return json.dumps({"names": names, "boxes": boxes, "crash": crash}).encode()
 
 
+# 金鑰：假的 router 依金鑰回答 router 的合約範例檔（tests/contracts/key-check/，複製自 router commit bff594f）
+CONTRACTS = Path(__file__).parent / "contracts" / "key-check"
+TEACHER_KEY = "vcr_sk_teacher" + "t" * 40      # 個人金鑰，管理 56「週一 程式設計」、57「週三 進階班」
+ADMIN_KEY = "vcr_sk_admin00" + "a" * 40        # admin 的個人金鑰：classes 是所有班級
+NO_CLASS_KEY = "vcr_sk_nocls0" + "n" * 40      # 只有學生身分的人的個人金鑰：classes 是空的
+CLASSROOM_KEY = "vcr_sk_class0" + "c" * 40     # 課堂金鑰，56 班的學生 1234
+DOWN_KEY = "vcr_sk_down00" + "d" * 40          # router 對這把金鑰回 503
+ALL_CLASSES = [{"id": 56, "name": "週一 程式設計"}, {"id": 57, "name": "週三 進階班"}, {"id": 58, "name": "週五 別人的班"}]
+
+
+def contract(name: str) -> dict:
+    return json.loads((CONTRACTS / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def router_answers() -> dict[str, dict]:
+    personal = contract("personal-accepted")
+    return {
+        TEACHER_KEY: personal,
+        ADMIN_KEY: {**personal, "user_id": 1, "is_admin": True, "classes": ALL_CLASSES},
+        NO_CLASS_KEY: {**personal, "user_id": 77, "classes": []},
+        CLASSROOM_KEY: contract("classroom-accepted"),
+    }
+
+
+def fake_router_key_check() -> KeyCheck:
+    """road-test 自己的 Key Check 用戶端，接到假的 router（在 HTTP 邊界上換掉）。"""
+    answers = router_answers()
+
+    def router(request: httpx.Request) -> httpx.Response:
+        key = json.loads(request.content)["api_key"]
+        if key == DOWN_KEY:
+            return httpx.Response(503)
+        return httpx.Response(200, json=answers.get(key, contract("refused")))
+
+    return KeyCheck("https://router.test", "road-test-credential", transport=httpx.MockTransport(router))
+
+
+def bearer(key: str) -> dict:
+    return {"Authorization": f"Bearer {key}"}
+
+
 @pytest.fixture
 def data_dir(tmp_path: Path) -> Path:
     (tmp_path / "answers").mkdir()
@@ -70,6 +113,7 @@ def open_site(data_dir: Path):
 
     def open_(**options) -> TestClient:
         options.setdefault("teacher_password", TEACHER)
+        options.setdefault("verify_key", fake_router_key_check().check)
         app = create_app(data_dir, load_detector=FakeDetector,
                          road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT),
                                      "final": RoadTest("final", "Mini", FRAME_COUNT)}, workers=0, **options)

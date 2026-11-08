@@ -58,13 +58,24 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 
 `ROAD_TEST_STUDENT`：學生訓練程式的資料夾（預設 repo 的 `student/`；Docker 映像裡是 `/app/student`）。
 
-`ROAD_TEST_TEACHER_PASSWORD`：老師密碼（Fly 上放 secrets）。沒設定的話，管理頁和老師的 API 一律拒絕。
+`ROAD_TEST_TEACHER_PASSWORD`：老師密碼（Fly 上放 secrets），舊版管理頁 `/teacher-password.html` 和組別代碼的 API 用。沒設定的話一律拒絕。組別代碼和老師密碼之後會拿掉。
+
+`VCR_URL`（預設 `https://ai.vanscoding.com`）、`VCR_SERVICE_CREDENTIAL`：網站用 router 的 Key Check 驗課堂金鑰和個人金鑰（`src/road_test/web/key_check.py`，見 `docs/adr/0001-identity-comes-from-router-keys.md`）。通過的結果留 60 秒，最多等 router 3 秒；router 連不上、逾時、5xx、429、401 都回「驗證服務暫時無法使用，請稍後再試」，並送一筆 ERROR 到 vans-signals（只寫金鑰前綴）。本機沒設定 `VCR_SERVICE_CREDENTIAL` 時，router 會回 401，所以金鑰的功能都不能用；測試注入假的驗證器，不用 router。
 
 `VANS_SIGNALS_URL`、`VANS_SIGNALS_TOKEN`：網站的 ERROR 記錄（交件偵測失敗、請求裡沒想到的錯）送到 vans-signals，Slack 上 Source 是 `road-test`（Fly 上放 secrets）。兩個都設定才送，本機不用設定。送的時候不等、約 2 秒逾時、不重送，送失敗不影響使用者。見 `docs/adr/0002-errors-go-to-vans-signals.md`。
 
 ### 管理頁 `/teacher.html`
 
-用老師密碼登入（密碼只存在這個分頁，關掉分頁就登出）：
+老師貼上自己現有的個人 API Key 登入（不要重新產生，重新產生會讓 VS Code 裡的那把失效）。金鑰只存在這個分頁的 `sessionStorage`，每個請求帶 `Authorization: Bearer`，網站不存金鑰。
+看得到的班級是 router 的 Key Check 給的（admin 是所有班級）；沒有可管理的班級時顯示「你沒有可管理的班級」。課堂金鑰不能用管理頁。
+
+- **班級**：選要管理的班級（顯示班級名稱）。
+- **正式路考**：這個班級的開放／關閉，別的班級不受影響。
+- **組別**：替這個班級新增組別，設定每組幾次正式路考。
+
+### 舊版管理頁 `/teacher-password.html`
+
+用老師密碼登入（密碼只存在這個分頁，關掉分頁就登出），拿掉組別代碼和老師密碼時一起刪掉：
 
 - **正式路考**：開放／關閉。開放期間模擬路考暫停收件，排隊中的正式路考先跑。
 - **組別與組別代碼**：填組數按「套用」產生 01…N 組的代碼（原本的組保留代碼），每組可以「重設代碼」，也可以「全部重設代碼」。代碼像 `bako-mite`，課堂上唸給各組抄；學生輸入時不分大小寫，空白、連字號打錯也收。
@@ -91,7 +102,7 @@ $ROAD_TEST_DATA/
   answers/Seq05VD.json 正式路考的答案（171 個計分幀）
   answers/0006R0.json  模擬路考的答案（101 個計分幀）
   groups.json          網站產生：組別代碼 {"01": "bako-mite", ...}，管理頁產生、重設（組別用英數字，會放在 HTTP 標頭裡）
-  road_test.db         網站產生：交件、排隊、偵測結果、成績、正式路考開關（SQLite）
+  road_test_v2.db      網站產生：交件、排隊、偵測結果、成績、組別、正式路考開關（SQLite）。改成依班級分組時重新開始，舊的 road_test.db 不讀、可以刪掉
   submissions/         網站產生：交上來的模型，改名成 組別_路考種類_上傳時間_編號.onnx
 ```
 
@@ -131,7 +142,8 @@ uv run make-answers --camvid <CamVid資料夾> --out <答案.json>
 |---|---|
 | 程式、前端、學生訓練程式 | Docker 映像（`Dockerfile`），只有 `pyproject.toml`、`uv.lock`、`src/`、`student/` |
 | 路考影片、答案、組別代碼、交件、成績、路考紀錄 | volume `road_test_data`（5 GB，東京 nrt），掛在 `/data` = `ROAD_TEST_DATA`。重新部署不會不見 |
-| 老師密碼 | Fly secrets `ROAD_TEST_TEACHER_PASSWORD` |
+| 老師密碼（舊版，之後拿掉） | Fly secrets `ROAD_TEST_TEACHER_PASSWORD` |
+| router 的 Key Check | Fly secrets `VCR_SERVICE_CREDENTIAL`（road-test 的 Service Credential，它的 SHA-256 加進 router 的 `VCR_SERVICE_TOKENS`，名稱 `road-test`）；`VCR_URL` 不設就是 `https://ai.vanscoding.com` |
 | 錯誤送到 vans-signals | Fly secrets `VANS_SIGNALS_URL`、`VANS_SIGNALS_TOKEN`（road-test 自己的 token，它的 SHA-256 加進 vans-signals 的 `SIGNALS_TOKENS`，名稱 `road-test`） |
 | GitHub Actions 部署用的 token | repo secret `FLY_API_TOKEN`（`flyctl tokens create deploy -a road-test`） |
 
@@ -144,6 +156,7 @@ flyctl deploy                                  # 從本機手動部署（在 rep
 flyctl logs -a road-test                       # 看紀錄
 flyctl machine list -a road-test               # 機器開著還是停著
 flyctl secrets set ROAD_TEST_TEACHER_PASSWORD=新密碼 -a road-test   # 換老師密碼（會重開機）
+flyctl secrets set VCR_SERVICE_CREDENTIAL=<openssl rand -hex 32 的結果> -a road-test   # 先把它的 SHA-256 加進 router 的 VCR_SERVICE_TOKENS、部署 router
 flyctl ssh sftp shell -a road-test             # 上傳／下載 volume 上的檔案（put 本機檔 /data/...）
 flyctl ssh console -a road-test                # 進機器
 ```

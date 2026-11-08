@@ -22,11 +22,12 @@ from pydantic import BaseModel, Field
 from road_test import paths
 from road_test.detector import CLASSES, Detector, ModelRejected
 from road_test.web.groups import GroupCodes
+from road_test.web.key_check import UNAVAILABLE, Identity, Refusal
 from road_test.web.limiter import FailureLimit
 from road_test.web.upload_limit import UploadLimit
 from road_test.web.results import score_result
 from road_test.web.settings import DEFAULT_MAX_UPLOAD_MB
-from road_test.web.store import Busy, NoFinalLeft, Store
+from road_test.web.store import Busy, DuplicateGroup, NoFinalLeft, Store
 from road_test.web.teacher import TARGET as TEACHER_TARGET, is_teacher, teacher_check
 from road_test.web.worker import Worker
 
@@ -36,6 +37,7 @@ STATIC = Path(__file__).parent / "static"
 KIND_NAMES = {"mock": "模擬路考", "final": "正式路考"}
 TRAINING_VIDEO = "0016E5"  # 訓練影片，在路考資料夾的 videos/ 裡；不會出現在路考裡
 VIDEO_URL_HOURS = 6  # 路考影片網址幾小時後失效（結果頁每次拿成績都會拿到新的網址）
+CONTENT_SECURITY_POLICY = "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 
 
 @dataclass(frozen=True)
@@ -81,12 +83,14 @@ def _video_key(data_dir: Path) -> bytes:
 def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_tests: dict[str, RoadTest], *,
                workers: int, fill_chunk: int = 500, teacher_password: str | None = None,
                student_dir: Path | None = None, clock: Callable[[], float] = time.time,
-               max_upload_bytes: int = DEFAULT_MAX_UPLOAD_MB * 1_000_000) -> FastAPI:
+               max_upload_bytes: int = DEFAULT_MAX_UPLOAD_MB * 1_000_000,
+               verify_key: Callable[[str], Identity | Refusal] | None = None) -> FastAPI:
     """data_dir：路考資料夾；load_detector：讀模型檔的函式（讀不進來要丟 ModelRejected）；
     road_tests：{"mock": RoadTest, "final": RoadTest}；workers：背景 worker 數（main 用 settings.from_env 的預設），0 就不開（測試自己跑 run_until_idle）；
     teacher_password：老師密碼（main 從 ROAD_TEST_TEACHER_PASSWORD 讀），None 就是老師的 API 一律拒絕；
     student_dir：發給學生的訓練程式（預設 paths.student_dir()）；clock：現在幾秒（測試換成假時鐘）；
-    max_upload_bytes：交件的大小上限（超過回 413，見 upload_limit.py）。
+    max_upload_bytes：交件的大小上限（超過回 413，見 upload_limit.py）；
+    verify_key：驗金鑰的函式（main 用 key_check.KeyCheck.check，測試換成接假 router 的），None 就是一律「驗證服務暫時無法使用」。
     """
     data_dir = Path(data_dir)
     student_dir = Path(student_dir) if student_dir else paths.student_dir()
@@ -103,6 +107,13 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     app.state.store = store
     app.add_middleware(UploadLimit, max_bytes=max_upload_bytes)
     app.state.worker = worker
+
+    @app.middleware("http")
+    async def content_security_policy(request: Request, call_next):
+        # 金鑰在 sessionStorage，個人金鑰還能呼叫 LLM：只跑網站自己的 script，不載入第三方、不跑 inline script
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+        return response
 
     @app.exception_handler(Exception)
     async def unexpected(request: Request, exc: Exception):
@@ -317,7 +328,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             raise HTTPException(403, "只能看自己這組的路考紀錄。")
         return [summary(r) for r in store.of_group(group)]
 
-    # 管理頁（teacher.html）：全部要老師密碼
+    # 舊版管理頁（teacher-password.html）：全部要老師密碼
     @app.get("/api/teacher/records", dependencies=[Depends(teacher)])
     def all_records():
         """所有組的路考紀錄，新的在前面。"""
@@ -373,6 +384,91 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         """每組都換新代碼（例如新學期），舊的全部失效。"""
         codes.reset_all()
         return group_table()
+
+    # 金鑰（road-test ADR 0001）：每個請求帶 Authorization: Bearer vcr_sk_…，用 router 的 Key Check 驗（留 60 秒）。
+    # 網站不存金鑰，也不寫進記錄。
+    check_key = verify_key or (lambda _key: UNAVAILABLE)
+
+    def identity(authorization: str | None = Header(None)) -> Identity:
+        scheme, _, key = (authorization or "").partition(" ")
+        if scheme.lower() != "bearer" or not key.strip():
+            raise HTTPException(401, "請貼上你的 API Key。")
+        who = check_key(key)
+        if isinstance(who, Refusal):
+            raise HTTPException(503 if who.reason == "unavailable" else 401, who.message)
+        return who
+
+    def teacher_key(who: Identity = Depends(identity)) -> Identity:
+        """個人金鑰、而且有班級可以管（admin 是所有班級）才是老師。"""
+        if who.kind != "personal":
+            raise HTTPException(403, "課堂金鑰不能用老師的功能，請貼上你的個人 API Key。")
+        if not who.is_teacher:
+            raise HTTPException(403, "你沒有可管理的班級")
+        return who
+
+    def managed_class(class_id: int, who: Identity = Depends(teacher_key)) -> tuple[int, str]:
+        name = dict(who.classes).get(class_id)
+        if name is None:
+            raise HTTPException(404, "找不到這個班級，或你不能管理它。")
+        return class_id, name
+
+    def group_view(row) -> dict:
+        return {"id": row["id"], "name": row["name"], "final_tries": row["final_tries"]}
+
+    def class_view(cls: tuple[int, str]) -> dict:
+        class_id, name = cls
+        return {"id": class_id, "name": name, "final_open": store.class_final_open(class_id),
+                "groups": [group_view(g) for g in store.class_groups(class_id)]}
+
+    @app.get("/api/teacher/classes")
+    def teacher_classes(who: Identity = Depends(teacher_key)):
+        """老師能管理的班級（router 的 Key Check 給的 classes，帶班級名稱）。"""
+        return {"is_admin": who.is_admin, "classes": [{"id": cid, "name": name} for cid, name in who.classes]}
+
+    @app.get("/api/teacher/classes/{class_id}")
+    def teacher_class(cls: tuple[int, str] = Depends(managed_class)):
+        """一個班級的組別（每組幾次正式路考）和正式路考開關。"""
+        return class_view(cls)
+
+    class NewGroup(BaseModel):
+        name: str = Field(min_length=1, max_length=40)
+        final_tries: int = Field(1, ge=1, le=99)
+
+    class GroupChange(BaseModel):
+        name: str | None = Field(None, min_length=1, max_length=40)
+        final_tries: int | None = Field(None, ge=1, le=99)
+
+    def group_name(name: str | None) -> str | None:
+        if name is not None and not name.strip():
+            raise HTTPException(400, "組別要有名稱。")
+        return name.strip() if name is not None else None
+
+    taken = HTTPException(409, "這個班級已經有同名的組別了。")
+
+    @app.post("/api/teacher/classes/{class_id}/groups", status_code=201)
+    def add_class_group(body: NewGroup, cls: tuple[int, str] = Depends(managed_class)):
+        """替班級建立組別，設定這組有幾次正式路考。"""
+        try:
+            return group_view(store.add_class_group(cls[0], group_name(body.name), body.final_tries))
+        except DuplicateGroup:
+            raise taken from None
+
+    @app.put("/api/teacher/classes/{class_id}/groups/{group_id}")
+    def change_class_group(group_id: int, body: GroupChange, cls: tuple[int, str] = Depends(managed_class)):
+        """改組別的名稱或正式路考次數。"""
+        try:
+            row = store.change_class_group(cls[0], group_id, group_name(body.name), body.final_tries)
+        except DuplicateGroup:
+            raise taken from None
+        if row is None:
+            raise HTTPException(404, "這個班級沒有這個組別。")
+        return group_view(row)
+
+    @app.put("/api/teacher/classes/{class_id}/final")
+    def switch_class_final(body: FinalSwitch, cls: tuple[int, str] = Depends(managed_class)):
+        """開關這個班級的正式路考，別的班級不受影響。"""
+        store.set_class_final(cls[0], body.open)
+        return class_view(cls)
 
     app.mount("/", FrontEnd(directory=STATIC, html=True), name="static")
     return app

@@ -1,4 +1,4 @@
-"""交件、偵測結果、成績都存在路考資料夾的 SQLite（road_test.db），模型檔存在 submissions/。
+"""交件、偵測結果、成績都存在路考資料夾的 SQLite（road_test_v2.db），模型檔存在 submissions/。
 
 部署時路考資料夾就是 Fly 的 volume，機器關掉再開，排隊和結果都還在。
 每次操作開一個新連線，worker 執行緒和 API 可以同時用。
@@ -15,6 +15,7 @@ from road_test.detector import CLASSES
 QUEUED, SCORING, FILLING, DONE, FAILED = "queued", "scoring", "filling", "done", "failed"
 # 「每組同時一件」算的是這些狀態：成績出來了但其餘的幀還沒補完，也算還在跑
 ACTIVE = (QUEUED, SCORING, FILLING)
+DATABASE = "road_test_v2.db"
 FINAL_TRIES = 1  # 正式路考每組幾次；老師還次數（#10）就在 final_returns 加一列
 
 
@@ -24,6 +25,10 @@ class Busy(Exception):
 
 class NoFinalLeft(Exception):
     """這組的正式路考次數用完了。"""
+
+
+class DuplicateGroup(Exception):
+    """這個班級已經有同名的組別。"""
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS submissions (
@@ -54,6 +59,18 @@ CREATE TABLE IF NOT EXISTS final_returns (  -- 老師還給某組的正式路考
     grp         TEXT NOT NULL,
     returned_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS class_groups (  -- 組別：老師替自己的班級建立（road-test ADR 0001）
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    class_id    INTEGER NOT NULL,          -- router 的整數 class_id
+    name        TEXT NOT NULL,
+    final_tries INTEGER NOT NULL,          -- 這組有幾次正式路考
+    created_at  TEXT NOT NULL,
+    UNIQUE (class_id, name)
+);
+CREATE TABLE IF NOT EXISTS class_finals (  -- 正式路考開關，每個班級一個；沒有列就是關著
+    class_id INTEGER PRIMARY KEY,
+    open     INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS detections (
     submission_id INTEGER NOT NULL,
     frame         INTEGER NOT NULL,        -- 影片幀號
@@ -80,7 +97,8 @@ class Store:
     def __init__(self, data_dir: Path):
         self.models_dir = data_dir / "submissions"
         self.models_dir.mkdir(parents=True, exist_ok=True)
-        self.path = data_dir / "road_test.db"
+        # road_test_v2.db：改成依班級分組時重新開始（road-test ADR 0001，不搬舊資料）；舊的 road_test.db 不讀
+        self.path = data_dir / DATABASE
         with self._db() as db:
             db.executescript(SCHEMA)
             # 上次關機時正在偵測計分幀的，重新排隊；補幀做到一半的，下次從沒做完的幀接著做
@@ -204,6 +222,42 @@ class Store:
     def set_setting(self, key: str, value) -> None:
         with self._db() as db:
             db.execute("INSERT OR REPLACE INTO settings VALUES (?, ?)", (key, json.dumps(value, ensure_ascii=False)))
+
+    # 班級的組別和正式路考開關（老師用個人金鑰管理）
+    def class_groups(self, class_id: int) -> list[sqlite3.Row]:
+        with self._db() as db:
+            return db.execute("SELECT * FROM class_groups WHERE class_id = ? ORDER BY id", (class_id,)).fetchall()
+
+    def add_class_group(self, class_id: int, name: str, final_tries: int) -> sqlite3.Row:
+        """建立組別；同一班已經有同名的組就丟 DuplicateGroup。"""
+        try:
+            with self._db() as db:
+                cur = db.execute("INSERT INTO class_groups (class_id, name, final_tries, created_at) VALUES (?, ?, ?, ?)",
+                                 (class_id, name, final_tries, now()))
+                return db.execute("SELECT * FROM class_groups WHERE id = ?", (cur.lastrowid,)).fetchone()
+        except sqlite3.IntegrityError:
+            raise DuplicateGroup from None
+
+    def change_class_group(self, class_id: int, group_id: int, name: str | None,
+                           final_tries: int | None) -> sqlite3.Row | None:
+        """改名稱或正式路考次數（None 就不改）；這個班級沒有這組回 None。"""
+        try:
+            with self._db() as db:
+                db.execute("UPDATE class_groups SET name = COALESCE(?, name), final_tries = COALESCE(?, final_tries)"
+                           " WHERE id = ? AND class_id = ?", (name, final_tries, group_id, class_id))
+                return db.execute("SELECT * FROM class_groups WHERE id = ? AND class_id = ?",
+                                  (group_id, class_id)).fetchone()
+        except sqlite3.IntegrityError:
+            raise DuplicateGroup from None
+
+    def set_class_final(self, class_id: int, is_open: bool) -> None:
+        with self._db() as db:
+            db.execute("INSERT OR REPLACE INTO class_finals VALUES (?, ?)", (class_id, int(is_open)))
+
+    def class_final_open(self, class_id: int) -> bool:
+        with self._db() as db:
+            row = db.execute("SELECT open FROM class_finals WHERE class_id = ?", (class_id,)).fetchone()
+            return bool(row and row[0])
 
     # worker 用
     def claim_queued(self) -> sqlite3.Row | None:
