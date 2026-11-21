@@ -1,6 +1,6 @@
 # road-test
 
-卷積神經網路的路考網站。術語見 `CONTEXT.md`；為什麼從 Machine-Learning-Lab 拆出來，見那邊的 [ADR-0001](https://github.com/mz038197/Machine-Learning-Lab/blob/main/docs/adr/0001-road-test-own-repo.md)。
+卷積神經網路的路考網站。術語見 `GLOSSARY.md`；為什麼從 Machine-Learning-Lab 拆出來，見那邊的 [ADR-0001](https://github.com/mz038197/Machine-Learning-Lab/blob/main/docs/adr/0001-road-test-own-repo.md)。
 
 ## 目錄
 
