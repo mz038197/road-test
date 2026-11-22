@@ -26,7 +26,7 @@ async function start() {
   try {
     mine = await api("/api/teacher/classes");
   } catch (e) {
-    $("load-error").textContent = e.message;  // 登入失效時 api() 已經帶回首頁
+    $("load-error").textContent = e.message;  // 登入失效時 api() 已經帶回 /admin 重新登入
     return;
   }
   $("admin").hidden = false;

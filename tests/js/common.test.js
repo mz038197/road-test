@@ -14,12 +14,13 @@ function fakeStorage() {
 }
 
 // 每個測試一個乾淨的瀏覽器：sessionStorage、fetch、location 都是假的；oldKey 是舊版留在分頁裡的金鑰
-function browser(answer = { status: 200, body: {} }, oldKey = "") {
+function browser(answer = { status: 200, body: {} }, oldKey = "", page = "/brief") {
   const requests = [];
   globalThis.sessionStorage = fakeStorage();
   if (oldKey) sessionStorage.setItem("road-test-api-key", oldKey);
   const visited = [];
-  globalThis.location = { replace: url => visited.push(url) };
+  globalThis.location = { origin: "https://site.test", pathname: page, replace: url => visited.push(url) };
+  globalThis.document = { referrer: "" };
   const answerHeaders = new Map(Object.entries(answer.headers || {}));
   globalThis.fetch = async (path, options = {}) => {
     requests.push({ path, headers: { ...(options.headers || {}) } });
@@ -57,15 +58,60 @@ test("被拒時丟出伺服器給的訊息", async () => {
   await assert.rejects(C.api("/api/teacher/classes"), { message: "你沒有可管理的班級" });
 });
 
-for (const [who, path, notice] of [["學生", "/api/student", "expired"], ["老師", "/api/teacher/classes", "login_required"]]) {
-  test(`${who}的登入失效時回首頁，帶伺服器給的提示代碼`, async () => {
-    const { C, visited } = browser({ status: 401, body: { detail: "請重新登入" }, headers: { "X-Login-Notice": notice } });
+const signedOut = notice => ({ status: 401, body: { detail: "請重新登入" }, headers: { "X-Login-Notice": notice } });
 
-    await assert.rejects(C.api(path));
+for (const notice of ["expired", "login_required"]) {
+  test(`學生的登入失效（${notice}）時回首頁，帶伺服器給的提示代碼`, async () => {
+    const { C, visited } = browser(signedOut(notice), "", "/submit.html");
+
+    await assert.rejects(C.api("/api/student"));
 
     assert.deepEqual(visited, [`/?notice=${notice}`]);
   });
 }
+
+test("老師在後台登入失效時回 /admin 重新登入", async () => {
+  const { C, visited } = browser(signedOut("login_required"), "", "/admin");
+
+  await assert.rejects(C.api("/api/teacher/classes"));
+
+  assert.deepEqual(visited, ["/admin"]);
+});
+
+test("老師在後台打開的結果頁登入失效時，也回 /admin", async () => {
+  const { C, visited } = browser(signedOut("login_required"), "", "/result.html");
+  C.rememberBackOffice();
+
+  await assert.rejects(C.api("/api/submissions/1"));
+
+  assert.deepEqual(visited, ["/admin"]);
+});
+
+test("老師從後台點播放時登入剛好失效，也回 /admin", async () => {
+  const { C, visited } = browser(signedOut("login_required"), "", "/result.html");
+  document.referrer = "https://site.test/admin";
+
+  await assert.rejects(C.api("/api/submissions/1"));
+
+  assert.deepEqual(visited, ["/admin"]);
+});
+
+test("別的網站的 /admin 連過來時，登入失效仍回首頁", async () => {
+  const { C, visited } = browser(signedOut("login_required"), "", "/result.html");
+  document.referrer = "https://other.test/admin";
+
+  await assert.rejects(C.api("/api/submissions/1"));
+
+  assert.deepEqual(visited, ["/?notice=login_required"]);
+});
+
+test("學生在結果頁登入失效時回首頁，不會被帶去 /admin", async () => {
+  const { C, visited } = browser(signedOut("expired"), "", "/result.html");
+
+  await assert.rejects(C.api("/api/submissions/1"));
+
+  assert.deepEqual(visited, ["/?notice=expired"]);
+});
 
 test("401 沒帶提示代碼時留在原頁", async () => {
   const { C, visited } = browser({ status: 401, body: { detail: "不能用" } });

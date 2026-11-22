@@ -7,10 +7,12 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="admin">
+<header class="site-header">
+  <a class="brand" href="/"><img src="/logo.svg" alt="" width="28" height="28"><span>路考網站</span></a>
+  <nav id="site-actions" aria-label="帳號"></nav>
+</header>
 <main>
-  <p><a href="/brief">委託</a></p>
   <h1>後台</h1>
-  <form method="post" action="/auth/logout"><button class="secondary small">登出</button></form>
   <p id="load-error" class="error" role="alert"></p>
 
   <div id="admin" hidden>
@@ -88,6 +90,7 @@
   </div>
 </main>
 <script src="common.js"></script>
+<script src="header.js"></script>
 <script src="teacher.js"></script>
 </body>
 </html>

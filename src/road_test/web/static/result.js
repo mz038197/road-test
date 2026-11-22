@@ -14,6 +14,7 @@ let shown = null;  // 畫面上的成績：交件的成績，或滑桿試算的�
 // 後台的連結不寫在頁面裡：只有伺服器說這位是管這個班級的老師才加上，學生看不到入口
 function showBackOfficeLink(s) {
   if (!s.can_manage || document.getElementById("back-office")) return;
+  rememberBackOffice();  // 之後登入失效就回 /admin，不是回沒有老師入口的首頁
   const link = document.createElement("a");
   link.id = "back-office";
   link.href = "/admin";

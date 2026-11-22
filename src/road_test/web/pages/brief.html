@@ -7,8 +7,11 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="steps-page">
+<header class="site-header">
+  <a class="brand" href="/"><img src="/logo.svg" alt="" width="28" height="28"><span>路考網站</span></a>
+  <nav id="site-actions" aria-label="帳號"></nav>
+</header>
 <main class="brief">
-  <form method="post" action="/auth/logout"><button class="secondary">登出</button></form>
   <header class="page-head">
     <p class="eyebrow">卷積神經網路的委託</p>
     <h1>路考</h1>
@@ -89,7 +92,7 @@
         <div class="step-num" aria-hidden="true">5</div>
         <div class="step-body">
           <h2>交模擬路考</h2>
-          <p>到<a href="submit.html">交件頁</a>貼上課堂 API Key（第一次進來要選組別、填顯示名稱），上傳模型檔，填 CONF。通常一分鐘內就有成績；結果頁可以播放整場路考、看考官紀錄，也能拖 CONF 試算。模擬路考可以交很多次，每組同時只能有一件在跑。</p>
+          <p>到<a href="submit.html">交件頁</a>上傳模型檔、填 CONF（第一次進來要先選組別）。通常一分鐘內就有成績；結果頁可以播放整場路考、看考官紀錄，也能拖 CONF 試算。模擬路考可以交很多次，每組同時只能有一件在跑。</p>
           <div class="step-actions">
             <a class="button" href="submit.html">交件、看路考紀錄 →</a>
           </div>
@@ -129,12 +132,14 @@
           <li>Roboflow 匯出時 Resize 不要選 <strong>Stretch</strong>：Stretch 會把 4:3 的畫面硬拉成正方形，車和人都變形；路考時是等比例縮小、旁邊補灰邊，訓練時看到的形狀跟路考不一樣，就認不出來。選 Fit（補邊），或不要 Resize。</li>
           <li>類別名稱必須是 <code>car</code>、<code>pedestrian</code>、<code>bicyclist</code>、<code>sign</code>，全部小寫、拼字一樣，不能多也不能少。訓練程式一開始會檢查，交件時網站也會再檢查一次，不對就退件（退件不算次數）。打錯了不用重新標註：在 Roboflow 產生版本時，用前處理的 Modify Classes 把打錯的類別改成正確的名稱，重新匯出再訓練。</li>
           <li>交的是訓練程式匯出的 <code>.onnx</code> 檔，不是 <code>.pt</code>。</li>
-          <li>課堂 API Key 不要給別人。每組同時只能有一件路考在跑，等它跑完再交下一件。</li>
+          <li>用共用電腦時，離開前記得按右上角的「登出」。每組同時只能有一件路考在跑，等它跑完再交下一件。</li>
         </ul>
       </section>
     </div>
   </div>
 </main>
+<script src="common.js"></script>
+<script src="header.js"></script>
 <script src="step-nav.js"></script>
 </body>
 </html>
