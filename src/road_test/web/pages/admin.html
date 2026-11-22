@@ -3,26 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>管理頁</title>
+  <title>後台</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="admin">
 <main>
-  <p><a href="submit.html">← 回交件頁</a>　<a href="/brief">委託</a></p>
-  <h1>管理頁</h1>
-
-  <form id="login" class="card">
-    <label for="api-key">個人 API Key</label>
-    <p class="muted">請貼上你現有的個人 API Key，不要重新產生。重新產生會讓 VS Code 裡的那把金鑰失效。</p>
-    <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="vcr_sk_…" required>
-    <button type="submit">登入</button>
-    <p id="login-error" class="error" role="alert"></p>
-  </form>
+  <p><a href="/brief">委託</a></p>
+  <h1>後台</h1>
+  <form method="post" action="/auth/logout"><button class="secondary small">登出</button></form>
+  <p id="load-error" class="error" role="alert"></p>
 
   <div id="admin" hidden>
-    <p class="muted">已登入（金鑰只存在這個分頁，關掉分頁就登出）。
-      <button type="button" id="logout" class="secondary small">登出</button></p>
-
     <section class="card">
       <h2>班級</h2>
       <label for="class">要管理的班級</label>

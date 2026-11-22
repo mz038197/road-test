@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "invalid_service_credential",
+    "message": "A Partner Service Service Credential is required."
+  }
+}

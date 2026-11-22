@@ -4,12 +4,12 @@
 CLASSROOM_KEY 是 56 班的學生 1234。
 """
 from conftest import (CLASSMATE_KEY, CLASSROOM_KEY, NO_CLASS_KEY, OTHER_CLASS_KEY, TEACHER_KEY, as_student, bearer,
-                      model, run_queue)
+                      model, run_queue, signed_in)
 
 
 def add_group(client, class_id: int, name: str, **fields) -> int:
     response = client.post(f"/api/teacher/classes/{class_id}/groups", json={"name": name, **fields},
-                           headers=bearer(TEACHER_KEY))
+                           headers=signed_in(TEACHER_KEY))
     assert response.status_code == 201
     return response.json()["id"]
 
@@ -90,7 +90,7 @@ def test_a_hand_in_records_the_class_the_group_and_the_student(client) -> None:
 
 
 def open_final(client, class_id: int, is_open: bool = True) -> None:
-    response = client.put(f"/api/teacher/classes/{class_id}/final", json={"open": is_open}, headers=bearer(TEACHER_KEY))
+    response = client.put(f"/api/teacher/classes/{class_id}/final", json={"open": is_open}, headers=signed_in(TEACHER_KEY))
     assert response.status_code == 200
 
 
@@ -117,7 +117,7 @@ def test_final_tries_are_counted_per_group(client) -> None:
     run_queue(client)
     refused = hand_in(client, CLASSMATE_KEY, kind="final")
     assert refused.status_code == 409, "同組的組員共用正式路考次數"
-    client.put(f"/api/teacher/classes/56/groups/{group}", json={"final_tries": 2}, headers=bearer(TEACHER_KEY))
+    client.put(f"/api/teacher/classes/56/groups/{group}", json={"final_tries": 2}, headers=signed_in(TEACHER_KEY))
     assert client.get("/api/student", headers=as_student(CLASSMATE_KEY)).json()["finals_left"] == 1
     assert hand_in(client, CLASSMATE_KEY, kind="final").status_code == 201
 
@@ -178,6 +178,6 @@ def test_the_teacher_of_the_class_can_see_its_results(client) -> None:
     sid = hand_in(client).json()["id"]
     run_queue(client)
 
-    seen = client.get(f"/api/submissions/{sid}", headers=bearer(TEACHER_KEY))
+    seen = client.get(f"/api/submissions/{sid}", headers=signed_in(TEACHER_KEY))
     assert seen.status_code == 200 and seen.json()["student_id"] == 1234
-    assert client.get(f"/api/submissions/{sid}", headers=bearer(NO_CLASS_KEY)).status_code == 404
+    assert client.get(f"/api/submissions/{sid}", headers=signed_in(NO_CLASS_KEY)).status_code == 404

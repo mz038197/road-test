@@ -4,12 +4,12 @@
 TEACHER_KEY 管 56、57 班；CLASSROOM_KEY、CLASSMATE_KEY 是 56 班的學生 1234、1235；OTHER_CLASS_KEY 是 57 班的學生。
 """
 from conftest import (ADMIN_KEY, CLASSMATE_KEY, CLASSROOM_KEY, NO_CLASS_KEY, OTHER_CLASS_KEY, TEACHER_KEY, as_student,
-                      bearer, run_queue)
+                      run_queue, signed_in)
 from test_student_groups import add_group, hand_in, join, records
 
 
 def class_view(client, class_id: int = 56, key: str = TEACHER_KEY) -> dict:
-    response = client.get(f"/api/teacher/classes/{class_id}", headers=bearer(key))
+    response = client.get(f"/api/teacher/classes/{class_id}", headers=signed_in(key))
     assert response.status_code == 200
     return response.json()
 
@@ -29,7 +29,7 @@ def test_the_teacher_sees_the_members_of_each_group_by_display_name(open_site) -
 
 
 def class_records(client, class_id: int = 56, key: str = TEACHER_KEY):
-    return client.get(f"/api/teacher/classes/{class_id}/records", headers=bearer(key))
+    return client.get(f"/api/teacher/classes/{class_id}/records", headers=signed_in(key))
 
 
 def test_the_teacher_sees_which_member_handed_in_each_record_of_the_class(client) -> None:
@@ -56,13 +56,13 @@ def test_only_the_teacher_of_the_class_sees_its_records(client) -> None:
 
     assert class_records(client, 58).status_code == 404, "不是自己的班級"
     assert class_records(client, key=NO_CLASS_KEY).status_code == 403
-    assert class_records(client, key=CLASSROOM_KEY).status_code == 403, "學生用 /api/student/records 看自己這組"
+    assert class_records(client, key=CLASSROOM_KEY).status_code == 401, "學生用 /api/student/records 看自己這組"
     assert len(class_records(client, key=ADMIN_KEY).json()) == 1, "admin 看得到所有班級"
 
 
 def move(client, student_id: int, group_id: int, class_id: int = 56, key: str = TEACHER_KEY):
     return client.put(f"/api/teacher/classes/{class_id}/members/{student_id}", json={"group_id": group_id},
-                      headers=bearer(key))
+                      headers=signed_in(key))
 
 
 def test_the_teacher_moves_a_student_who_picked_the_wrong_group(client) -> None:
@@ -96,7 +96,7 @@ def test_a_student_can_only_be_moved_within_their_class(client) -> None:
     assert move(client, 2001, mine).status_code == 404, "56 班沒有這個學生"
     assert move(client, 1235, mine).status_code == 404, "還沒選組的學生不能改"
     assert move(client, 1234, mine, class_id=58).status_code == 404, "不是自己的班級"
-    assert move(client, 1234, mine, key=CLASSROOM_KEY).status_code == 403, "學生不能自己換組"
+    assert move(client, 1234, mine, key=CLASSROOM_KEY).status_code == 401, "學生不能自己換組"
     assert client.get("/api/student", headers=as_student(CLASSROOM_KEY)).json()["member"]["group_id"] == mine
 
 
@@ -109,9 +109,9 @@ def test_the_teacher_plays_back_any_groups_result_in_their_class(client, data_di
     run_queue(client)
 
     for sid in sids:
-        seen = client.get(f"/api/submissions/{sid}", headers=bearer(TEACHER_KEY))
+        seen = client.get(f"/api/submissions/{sid}", headers=signed_in(TEACHER_KEY))
         assert seen.status_code == 200 and seen.json()["result"]["score"] is not None
-        assert client.get(f"/api/submissions/{sid}/detections", headers=bearer(TEACHER_KEY)).status_code == 200, \
+        assert client.get(f"/api/submissions/{sid}/detections", headers=signed_in(TEACHER_KEY)).status_code == 200, \
             "老師也拿得到播放用的偵測框"
         assert client.get(seen.json()["video_url"]).status_code == 200, "老師拿到的影片網址播得了"
-        assert client.get(f"/api/submissions/{sid}", headers=bearer(NO_CLASS_KEY)).status_code == 404
+        assert client.get(f"/api/submissions/{sid}", headers=signed_in(NO_CLASS_KEY)).status_code == 404

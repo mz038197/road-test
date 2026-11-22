@@ -1,5 +1,5 @@
 // 結果頁：result.html?id=N。每秒問一次進度；成績出來就開始播放（player.js）。
-// 學生的身分在 cookie，老師的個人金鑰由 common.js 的 authHeaders() 帶上，所以兩邊用的是同一頁。
+// 學生和老師的身分都在 cookie，所以兩邊用的是同一頁。
 // 資料都經過 source。模擬路考有 CONF 滑桿：拖動時呼叫 /rescore 重算，拿到新結果就 player.setResult()。
 const id = new URLSearchParams(location.search).get("id");
 const source = {
@@ -11,6 +11,16 @@ let player = null;
 let lastFill = 0;
 let shown = null;  // 畫面上的成績：交件的成績，或滑桿試算的成績
 
+// 後台的連結不寫在頁面裡：只有伺服器說這位是管這個班級的老師才加上，學生看不到入口
+function showBackOfficeLink(s) {
+  if (!s.can_manage || document.getElementById("back-office")) return;
+  const link = document.createElement("a");
+  link.id = "back-office";
+  link.href = "/admin";
+  link.textContent = "後台";
+  document.getElementById("page-links").append("　", link);
+}
+
 async function poll() {
   let s;
   try {
@@ -20,6 +30,7 @@ async function poll() {
     document.getElementById("error").textContent = e.message;
     return;  // 看不到就不再問
   }
+  showBackOfficeLink(s);
   // 組別的名稱是老師取的（例如「第 1 組」）
   document.getElementById("title").textContent = `${s.group} ${s.kind_name}`;
   document.getElementById("meta").textContent = `${when(s.uploaded_at)} 上傳 ${s.filename}`;

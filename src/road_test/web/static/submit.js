@@ -29,7 +29,6 @@ async function enter() {
     showProblem(e.message);
     return;
   }
-  saveKey("");  // 以前貼金鑰時留在這個分頁的金鑰，登入之後用不到，不留在 JavaScript 讀得到的地方
   if (me.groups.length === 0) {
     show("not-open");
     return;

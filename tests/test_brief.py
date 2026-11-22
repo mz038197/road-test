@@ -81,7 +81,7 @@ def test_the_submission_form_moved_to_its_own_page(client) -> None:
     assert 'id="submit"' in page.text and "submit.js" in page.text, "交件表單在 submit.html"
 
 
-@pytest.mark.parametrize("page", ["/brief", "/submit.html", "/result.html", "/teacher.html"])
+@pytest.mark.parametrize("page", ["/brief", "/submit.html", "/result.html", "/admin"])
 def test_every_link_on_the_site_pages_works(client, training_video, page: str) -> None:
     html = client.get(page).text
     links = re.findall(r'(?:href|src)="([^"#?]+)', html)
@@ -116,7 +116,7 @@ def test_step_navigation_reads_each_number_as_a_step(client, page: str) -> None:
     assert spoken == [f"第 {n} 步：" for n in numbers], f"{page} 的步驟編號要念成「第 N 步」，不要跟後面的字黏在一起：{spoken}"
 
 
-@pytest.mark.parametrize("page", ["/brief", "/submit.html", "/result.html", "/teacher.html"])
+@pytest.mark.parametrize("page", ["/brief", "/submit.html", "/result.html", "/admin"])
 def test_pages_load_nothing_from_other_sites(client, page: str) -> None:
     html = client.get(page).text
     external = re.findall(r'<(?:link|script)[^>]+(?:href|src)="(https?://[^"]+)"', html)

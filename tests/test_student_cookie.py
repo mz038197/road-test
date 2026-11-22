@@ -4,7 +4,7 @@ import pytest
 from road_test.web.router import FakeRouter
 
 from conftest import (CLASSMATE_KEY, CLASSROOM_KEY, DOWN_KEY, TEACHER_KEY, as_student, bearer, contract, model,
-                      router_answers, run_queue)
+                      router_answers, run_queue, signed_in)
 from test_student_groups import add_group, hand_in, join
 
 ENDED_KEY = "vcr_sk_ended0" + "e" * 40
@@ -114,7 +114,7 @@ def test_the_group_card_lists_every_member_of_my_group_only(client) -> None:
 
     assert me["member"]["group_name"] == "第 1 組"
     assert sorted(me["teammates"]) == sorted(["小明", "小華"])
-    client.put("/api/teacher/classes/56/members/1235", json={"group_id": other}, headers=bearer(TEACHER_KEY))
+    client.put("/api/teacher/classes/56/members/1235", json={"group_id": other}, headers=signed_in(TEACHER_KEY))
     assert client.get("/api/student", headers=as_student(CLASSROOM_KEY)).json()["teammates"] == ["小明"]
 
 
@@ -166,11 +166,14 @@ def test_a_leftover_classroom_key_in_the_tab_does_not_get_in_the_way_of_the_cook
     assert response.status_code == 200
 
 
-def test_a_teacher_with_a_personal_key_still_plays_results(client) -> None:
+def test_a_teacher_plays_results_with_the_teacher_cookie_and_not_with_a_personal_key(client) -> None:
     join(client, add_group(client, 56, "第 1 組"))
     sid = hand_in(client).json()["id"]
 
-    assert client.get(f"/api/submissions/{sid}", headers=bearer(TEACHER_KEY)).status_code == 200
+    assert client.get(f"/api/submissions/{sid}", headers=signed_in(TEACHER_KEY)).status_code == 200
+    for path in (f"/api/submissions/{sid}", f"/api/submissions/{sid}/detections",
+                 f"/api/submissions/{sid}/rescore?conf=0.5"):
+        assert client.get(path, headers=bearer(TEACHER_KEY)).status_code == 401, path
 
 
 def test_no_page_or_answer_carries_the_key(client) -> None:

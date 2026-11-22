@@ -1,6 +1,6 @@
 """正式路考：老師替班級開關、每組的次數、CONF 鎖定、優先執行（HTTP API）。
 
-交件的是 56 班 01、02、03 組的學生（conftest 的 submit），老師用個人金鑰開關（set_final）。
+交件的是 56 班 01、02、03 組的學生（conftest 的 submit），老師用老師 cookie 開關（set_final）。
 """
 from conftest import as_group, records, run_queue, set_final, submit
 
