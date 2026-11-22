@@ -46,6 +46,8 @@ KIND_NAMES = {"mock": "模擬路考", "final": "正式路考"}
 TRAINING_VIDEO = "0016E5"  # 訓練影片，在路考資料夾的 videos/ 裡；不會出現在路考裡
 VIDEO_URL_HOURS = 6  # 路考影片網址幾小時後失效（結果頁每次拿成績都會拿到新的網址）
 NOT_OPEN = "這一班還沒開放路考"  # 班級還沒建立組別時學生看到的
+STUDENTS_ONLY = "只有學生能交件。老師沒有組別，要示範交件請用邀請碼以學生身分登入。"
+STUDENTS_ONLY_HEADER = "X-Students-Only"  # 交件頁看到這個標頭，就告訴老師只有學生能交件，不導回首頁
 CONTENT_SECURITY_POLICY = "script-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 
 
@@ -173,7 +175,16 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def student(request: Request) -> Identity:
         """登入的學生（cookie 裡的課堂金鑰，ADR 0003）：只能在自己的 class_id 裡選組、交件、看自己這組。
         顯示名稱每次驗金鑰時跟著 router 更新。"""
-        who = signed_in_student(request, router)
+        try:
+            who = signed_in_student(request, router)
+        except HTTPException as refused:
+            if refused.status_code != 401 or teacher_cookie.read(request) is None:
+                raise
+            # 老師是登入的，只是不是學生：別導回首頁說「請先登入」。失效的課堂金鑰照樣清掉
+            headers = {STUDENTS_ONLY_HEADER: "1"}
+            if "Set-Cookie" in refused.headers:
+                headers["Set-Cookie"] = refused.headers["Set-Cookie"]
+            raise HTTPException(403, STUDENTS_ONLY, headers=headers) from None
         if who.display_name:
             store.update_display_name(who.class_id, who.student_id, who.display_name)
         return who

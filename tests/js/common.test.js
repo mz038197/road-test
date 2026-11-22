@@ -121,6 +121,22 @@ test("401 沒帶提示代碼時留在原頁", async () => {
   assert.deepEqual(visited, []);
 });
 
+test("老師開交件頁時留在原頁，錯誤標明只有學生能交件", async () => {
+  const { C, visited } = browser({
+    status: 403, body: { detail: "只有學生能交件" }, headers: { "X-Students-Only": "1" },
+  }, "", "/submit.html");
+
+  await assert.rejects(C.api("/api/student"), { message: "只有學生能交件", studentsOnly: true });
+
+  assert.deepEqual(visited, []);
+});
+
+test("其他被拒的情況不會標成只有學生能交件", async () => {
+  const { C } = browser({ status: 403, body: { detail: "你沒有可管理的班級" } });
+
+  await assert.rejects(C.api("/api/teacher/classes"), { studentsOnly: false });
+});
+
 test("router 連不上時留在原頁", async () => {
   const { C, visited } = browser({ status: 503, body: { detail: "驗證服務暫時無法使用，請稍後再試" } });
 

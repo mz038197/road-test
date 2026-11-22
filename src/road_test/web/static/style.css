@@ -1,40 +1,40 @@
-/* 路考網站的樣式。設計規格：.claude/skills/design-system/SKILL.md（bento：圓角方塊、米色底、桃色重點）。
-   顏色、字、間距、尺寸都只用下面的變數。*-ink 是為了文字對比（≥ 4.5:1）加深的版本；--fs-48 是規格外多加的一級，給成績大字。
-   字型用系統字，四頁一致；這些和其他跟規格不同的地方，寫在規格最後的「本專案的例外」。 */
+/* 路考網站的樣式：跟 club-booking-board 同一套視覺（zinc 中性色、1px 線、小圓角、黑色主按鈕、系統字）。
+   顏色、字、間距、尺寸都只用下面的變數。*-ink 是為了文字對比（≥ 4.5:1）加深的版本；--fs-48 給成績大字。
+   字型用系統字，不載入外部字型（CSP）。 */
 :root {
   /* 會換的顏色：淺色、深色的值各寫一次在這裡，下面的 @supports 再組成 light-dark(淺色, 深色) */
-  --primary-light: #FAD4C0;       --primary-dark: #5A3A2C;
-  --surface-light: #FFF5E6;       --surface-dark: #15120F;
-  --text-light: #111827;          --text-dark: #F3EEE8;
-  --tile-light: #FFFFFF;          --tile-dark: #211C18;
-  --line-light: #EADFCC;          --line-dark: #3A322B;
-  --muted-light: #4B5563;         --muted-dark: #B5ADA4;
-  --on-primary-light: #111827;    --on-primary-dark: #FFE9DC;
-  --secondary-ink-light: #3E5F80; --secondary-ink-dark: #A9C3DC;
-  --danger-ink-light: #B91C1C;    --danger-ink-dark: #FF8A8A;
-  --warning-ink-light: #92400E;   --warning-ink-dark: #F6B663;
-  --success-ink-light: #15803D;   --success-ink-dark: #6FD39A;
+  --primary-light: #18181B;       --primary-dark: #FAFAFA;
+  --surface-light: #FAFAFA;       --surface-dark: #09090B;
+  --text-light: #09090B;          --text-dark: #FAFAFA;
+  --tile-light: #FFFFFF;          --tile-dark: #18181B;
+  --hover-light: #F4F4F5;         --hover-dark: #27272A;
+  --line-light: #E4E4E7;          --line-dark: #3F3F46;
+  --muted-light: #52525B;         --muted-dark: #A1A1AA;
+  --on-primary-light: #FAFAFA;    --on-primary-dark: #18181B;
+  --secondary-ink-light: #3F3F46; --secondary-ink-dark: #D4D4D8;
+  --danger-ink-light: #991B1B;    --danger-ink-dark: #FCA5A5;
+  --warning-ink-light: #B45309;   --warning-ink-dark: #FBBF24;
+  --success-ink-light: #15803D;   --success-ink-dark: #4ADE80;
   /* 頁面上用的顏色。先放淺色：不支援 light-dark() 的舊瀏覽器（Chrome 123、Safari 17.5、Firefox 120 以前）就停在淺色版 */
   --primary: var(--primary-light); --surface: var(--surface-light); --text: var(--text-light);
-  --tile: var(--tile-light); --line: var(--line-light); --muted: var(--muted-light); --on-primary: var(--on-primary-light);
+  --tile: var(--tile-light); --hover: var(--hover-light); --line: var(--line-light); --muted: var(--muted-light); --on-primary: var(--on-primary-light);
   --secondary-ink: var(--secondary-ink-light); --danger-ink: var(--danger-ink-light);
   --warning-ink: var(--warning-ink-light); --success-ink: var(--success-ink-light);
   /* 不會換的顏色 */
-  --secondary: #80A1C1; --success: #16A34A; --warning: #D97706; --danger: #DC2626;
+  --secondary: #A1A1AA; --success: #16A34A; --warning: #D97706; --danger: #DC2626;
   --on-warning: #111827; --on-danger: #FFFFFF;
   --stage: #000000;  /* 影片底色，淺色深色都一樣 */
   /* 字 */
-  --font: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
+  --font: ui-sans-serif, system-ui, -apple-system, "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif;
   --mono: ui-monospace, Consolas, "Courier New", monospace;
   --fs-12: 12px; --fs-14: 14px; --fs-16: 16px; --fs-20: 20px; --fs-24: 24px; --fs-32: 32px; --fs-48: 48px;
   --code-size: .95em;  /* 程式碼跟著外面的字大小，稍微小一點 */
   /* 間距、圓角、線 */
   --s-4: 4px; --s-8: 8px; --s-12: 12px; --s-16: 16px; --s-24: 24px; --s-32: 32px;
   --page-end: 64px;  /* 頁尾多留的一段（兩個 32） */
-  --radius: 16px; --radius-sm: 8px; --radius-xs: 4px; --pill: 999px;
+  --radius: 8px; --radius-sm: 6px; --radius-xs: 4px; --pill: 999px;
   --rule: 1px; --rule-strong: 2px; --rule-accent: 6px;
-  --focus-ring: 3px; --focus-offset: 2px; --underline-offset: 3px;
-  --lift: -1px;  /* 按鈕滑過時往上浮的距離 */
+  --focus-ring: 2px; --focus-offset: 2px; --underline-offset: 3px;
   --progress-height: 10px; --check-offset: 6px;  /* 勾選框往下移，跟第一行字對齊 */
   /* 元件尺寸 */
   --nav-width: 240px; --step-num: 56px; --step-num-sm: 40px; --nav-num: 28px; --nav-num-sm: 24px; --check: 18px;
@@ -52,6 +52,7 @@
     --surface: light-dark(var(--surface-light), var(--surface-dark));
     --text: light-dark(var(--text-light), var(--text-dark));
     --tile: light-dark(var(--tile-light), var(--tile-dark));
+    --hover: light-dark(var(--hover-light), var(--hover-dark));
     --line: light-dark(var(--line-light), var(--line-dark));
     --muted: light-dark(var(--muted-light), var(--muted-dark));
     --on-primary: light-dark(var(--on-primary-light), var(--on-primary-dark));
@@ -71,14 +72,14 @@ main { max-width: var(--page); margin: 0 auto;
 /* 只給報讀軟體念、畫面上看不到的字（例如導覽的「第 1 步：」）。1px、-1px 是這個技巧固定的寫法，不是間距 */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
            clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
-h1 { font-size: var(--fs-32); line-height: 1.2; font-weight: 800; letter-spacing: -.01em; margin: 0 0 var(--s-4); }
-h2 { font-size: var(--fs-20); font-weight: 700; margin: 0 0 var(--s-12); }
-h3 { font-size: var(--fs-16); font-weight: 700; margin: var(--s-16) 0 var(--s-8); }
+h1 { font-size: var(--fs-32); line-height: 1.2; font-weight: 700; letter-spacing: -.02em; margin: 0 0 var(--s-4); }
+h2 { font-size: var(--fs-20); font-weight: 600; margin: 0 0 var(--s-12); }
+h3 { font-size: var(--fs-16); font-weight: 600; margin: var(--s-16) 0 var(--s-8); }
 p { margin: 0 0 var(--s-8); }
 ul, ol { margin: 0 0 var(--s-8); padding-left: var(--s-24); }
 li + li { margin-top: var(--s-4); }
 a { color: var(--secondary-ink); text-underline-offset: var(--underline-offset); }
-code { font: 500 var(--code-size) var(--mono); background: var(--surface); border: var(--rule) solid var(--line);
+code { font: 500 var(--code-size) var(--mono); background: var(--hover); border: var(--rule) solid var(--line);
        padding: 0 var(--s-4); border-radius: var(--radius-xs); }
 :focus-visible { outline: var(--focus-ring) solid var(--secondary-ink); outline-offset: var(--focus-offset); }
 .muted { color: var(--muted); }
@@ -87,11 +88,14 @@ code { font: 500 var(--code-size) var(--mono); background: var(--surface); borde
            margin: 0 0 var(--s-8); }
 .back { display: inline-block; font-size: var(--fs-14); font-weight: 600; margin-bottom: var(--s-8); }
 .page-head { margin-bottom: var(--s-24); }
-/* 全站標題列：這裡只排版，視覺樣式在 #7 */
+/* 全站標題列 */
 .site-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
-               gap: var(--s-8) var(--s-16); padding: var(--s-8) var(--s-16); border-bottom: 1px solid var(--line); }
-.site-header .brand { display: inline-flex; align-items: center; gap: var(--s-8); font-weight: 700; }
-#site-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-8) var(--s-12); }
+               gap: var(--s-8) var(--s-16); padding: var(--s-12) var(--s-16); background: var(--tile);
+               border-bottom: var(--rule) solid var(--line); }
+.site-header .brand { display: inline-flex; align-items: center; gap: var(--s-8); font-weight: 600; color: var(--text);
+                      text-decoration: none; }
+#site-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-8) var(--s-12); font-size: var(--fs-14); }
+#site-actions a { color: var(--text); }
 #site-actions form { margin: 0; }
 
 /* ---- 方塊 ---- */
@@ -103,16 +107,16 @@ code { font: 500 var(--code-size) var(--mono); background: var(--surface); borde
 label { display: block; margin: var(--s-16) 0 var(--s-4); font-weight: 700; font-size: var(--fs-14); }
 input, select, button { font: inherit; }
 input[type=text], input[type=password], input[type=number], select {
-  width: 100%; padding: var(--s-12) var(--s-16); border: var(--rule-strong) solid var(--line); border-radius: var(--radius-sm);
-  background: var(--surface); color: var(--text); }
+  width: 100%; padding: var(--s-8) var(--s-12); border: var(--rule) solid var(--line); border-radius: var(--radius-sm);
+  background: var(--tile); color: var(--text); }
 input[type=password] { font-family: var(--mono); letter-spacing: .1em; }
 input[type=number] { width: 10em; font-variant-numeric: tabular-nums; }
 input:focus-visible, select:focus-visible { border-color: var(--secondary-ink); outline-offset: 0; }
-input[type=file] { width: 100%; padding: var(--s-24) var(--s-16); border: var(--rule-strong) dashed var(--secondary);
+input[type=file] { width: 100%; padding: var(--s-24) var(--s-16); border: var(--rule) dashed var(--secondary);
   border-radius: var(--radius); background: var(--surface); color: var(--muted); font-size: var(--fs-14); cursor: pointer; }
 input[type=file]:hover { border-color: var(--text); }
 input[type=file]::file-selector-button { font: 600 var(--fs-14) var(--font); padding: var(--s-8) var(--s-16);
-  margin-right: var(--s-12); border-radius: var(--pill); border: var(--rule-strong) solid var(--text); background: var(--tile);
+  margin-right: var(--s-12); border-radius: var(--radius-sm); border: var(--rule) solid var(--line); background: var(--tile);
   color: var(--text); cursor: pointer; }
 label.inline { display: inline-flex; gap: var(--s-8); align-items: center; font-weight: 400; margin: 0 var(--s-16) 0 0; }
 label.confirm { display: flex; gap: var(--s-8); align-items: flex-start; margin-top: var(--s-16);
@@ -123,37 +127,38 @@ label.confirm input { margin-top: var(--check-offset); width: var(--check); heig
 /* 模擬／正式：膠囊按鈕（還是 radio，鍵盤照常用方向鍵選） */
 fieldset.kinds { border: 0; padding: 0; margin: 0; }
 fieldset.kinds legend { font-weight: 700; font-size: var(--fs-14); padding: 0; margin-bottom: var(--s-8); }
-fieldset.kinds label.inline { position: relative; margin: 0 var(--s-8) var(--s-8) 0; padding: var(--s-8) var(--s-16);
-  border: var(--rule-strong) solid var(--text); border-radius: var(--pill); font-weight: 700; cursor: pointer; }
+fieldset.kinds label.inline { position: relative; margin: 0 var(--s-8) var(--s-8) 0; padding: var(--s-4) var(--s-12);
+  border: var(--rule) solid var(--line); border-radius: var(--pill); font-weight: 500; cursor: pointer; }
 fieldset.kinds input { position: absolute; opacity: 0; pointer-events: none; }
-fieldset.kinds label:has(input:checked) { background: var(--text); color: var(--surface); }
+fieldset.kinds label:has(input:checked) { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 fieldset.kinds label:has(input:disabled) { opacity: .45; border-style: dashed; cursor: not-allowed; }
 fieldset.kinds label:has(input:focus-visible) { outline: var(--focus-ring) solid var(--secondary-ink); outline-offset: var(--focus-offset); }
 fieldset.kinds p { font-size: var(--fs-14); margin: 0; }
 
 /* ---- 按鈕 ---- */
 button, a.button { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-8);
-  margin-top: var(--s-16); padding: var(--s-12) var(--s-24); border: var(--rule-strong) solid var(--text); border-radius: var(--pill);
-  background: var(--text); color: var(--surface); font-weight: 700; line-height: 1.2; text-decoration: none; cursor: pointer; }
+  margin-top: var(--s-16); padding: var(--s-8) var(--s-16); border: var(--rule) solid var(--primary); border-radius: var(--radius-sm);
+  background: var(--primary); color: var(--on-primary); font-size: var(--fs-14); font-weight: 500; line-height: 1.4; text-decoration: none; cursor: pointer; }
 a.button { margin-top: 0; }
-button:hover:not(:disabled), a.button:hover { transform: translateY(var(--lift)); box-shadow: 0 var(--s-4) 0 var(--secondary); }
-button:active:not(:disabled), a.button:active { transform: none; box-shadow: none; }
+button:hover:not(:disabled), a.button:hover { opacity: .88; }
 button:disabled { opacity: .5; cursor: default; }
-button.secondary, a.button.secondary { background: transparent; color: var(--text); }
+button.secondary, a.button.secondary { background: var(--tile); border-color: var(--line); color: var(--text); }
+button.secondary:hover:not(:disabled), a.button.secondary:hover { background: var(--hover); opacity: 1; }
 button.danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
-button.small { margin: 0; padding: var(--s-4) var(--s-12); font-size: var(--fs-14); }
-button.full-width { width: 100%; padding: var(--s-16); font-size: var(--fs-20); }
+button.small { margin: 0; padding: var(--s-4) var(--s-12); }
+button.full-width { width: 100%; padding: var(--s-12); font-size: var(--fs-16); }
 
 /* ---- 訊息 ---- */
 .error { color: var(--danger-ink); font-weight: 700; }
 /* 空的時候不佔位置，但不能 display: none：role="alert" 要一直在，之後寫進去的錯誤報讀軟體才念得出來 */
 .error:empty { margin: 0; }
 .notice { color: var(--success-ink); font-weight: 700; }
-.banner { background: var(--warning); color: var(--on-warning); border-radius: var(--radius);
-  padding: var(--s-16) var(--s-24); font-weight: 800; font-size: var(--fs-20); margin: var(--s-16) 0; }
+.banner { background: color-mix(in srgb, var(--warning) 14%, var(--tile)); color: var(--warning-ink);
+  border: var(--rule) solid var(--warning); border-radius: var(--radius-sm);
+  padding: var(--s-8) var(--s-12); font-weight: 600; font-size: var(--fs-14); margin: var(--s-16) 0; }
 .warn { border-left: var(--rule-accent) solid var(--warning); }
 .warn h2 { color: var(--warning-ink); }
-.confirm-box { margin-top: var(--s-12); padding: var(--s-12) var(--s-16); border: var(--rule-strong) solid var(--warning);
+.confirm-box { margin-top: var(--s-12); padding: var(--s-12) var(--s-16); border: var(--rule) solid var(--warning);
   border-radius: var(--radius-sm); }
 .confirm-box p { margin: 0 0 var(--s-4); }
 .confirm-box button { margin-top: var(--s-8); }
@@ -162,10 +167,10 @@ button.full-width { width: 100%; padding: var(--s-16); font-size: var(--fs-20); 
 .table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: var(--fs-14); }
 th { text-align: left; font-size: var(--fs-12); color: var(--muted); font-weight: 700; padding: var(--s-8);
-     border-bottom: var(--rule-strong) solid var(--line); white-space: nowrap; }
+     border-bottom: var(--rule) solid var(--line); white-space: nowrap; }
 td { padding: var(--s-8); border-bottom: var(--rule) solid var(--line); white-space: nowrap; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-tbody tr:hover { background: var(--surface); }
+tbody tr:hover { background: var(--hover); }
 .records td.num:last-child { font-size: var(--fs-20); font-weight: 800; }
 .score { font-size: var(--fs-48); font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
 progress { width: 100%; height: var(--progress-height); accent-color: var(--text); }
@@ -178,9 +183,9 @@ body.steps-page main { max-width: var(--page-steps); }
 .step-nav li + li { margin-top: var(--s-4); }
 .step-nav a { display: flex; gap: var(--s-12); align-items: center; padding: var(--s-8) var(--s-12);
   border-radius: var(--radius-sm); color: var(--text); text-decoration: none; font-weight: 600; }
-.step-nav a:hover { background: var(--primary); color: var(--on-primary); }
+.step-nav a:hover { background: var(--hover); color: var(--text); }
 /* 目前看到的那一步（step-nav.js 設 aria-current） */
-.step-nav a[aria-current] { background: var(--text); color: var(--surface); }
+.step-nav a[aria-current], .step-nav a[aria-current]:hover { background: var(--primary); color: var(--on-primary); }
 .step-nav .step-num { display: grid; place-items: center; width: var(--nav-num); height: var(--nav-num); flex: none;
   border-radius: 50%; border: var(--rule-strong) solid currentColor; font-size: var(--fs-14); font-weight: 800; }
 /* 右欄：一張張方塊直排。交件頁的 <form> 也是一疊方塊，所以 step-column 裡面還有一層 step-list */
@@ -259,16 +264,28 @@ body.wide main { max-width: var(--page-wide); }
 .controls .play { min-width: 3em; }
 .controls .seek { flex: 1; min-width: var(--seek-min); accent-color: var(--text); }
 .controls .clock { font-variant-numeric: tabular-nums; min-width: 7.5em; }
-.controls .speed { background: transparent; color: var(--text); }
-.controls .speed.on { background: var(--text); color: var(--surface); }
+.controls .speed { background: transparent; border-color: var(--line); color: var(--text); }
+.controls .speed.on { background: var(--text); border-color: var(--text); color: var(--surface); }
 @media (max-width: 900px) {
   .player { grid-template-columns: 1fr; }
   .player:not(:fullscreen) .panel { max-height: 50vh; }
 }
 
-/* ---- 管理頁（teacher.html） ---- */
+/* ---- 後台 ---- */
 body.admin main { max-width: var(--page-admin); }
 .row { display: flex; align-items: center; gap: var(--s-12); flex-wrap: wrap; margin-top: var(--s-12); }
 .row button, .row label { margin: 0; }
 .row select { width: auto; }
 td.actions button + button { margin-left: var(--s-8); }
+
+/* ---- 首頁：跟 club-booking-board 的首頁一樣是深色主視覺 ---- */
+body.home { color-scheme: dark; min-height: 100vh;
+  --surface: #09090B; --tile: #18181B; --hover: #27272A; --text: #FAFAFA; --muted: #A1A1AA; --line: #3F3F46;
+  --primary: #FAFAFA; --on-primary: #18181B; --secondary-ink: #D4D4D8; }
+body.home .site-header { background: var(--surface); }
+body.home main { padding-top: var(--page-end); }
+body.home h1 { font-size: var(--fs-48); }
+body.home a.button { padding: var(--s-12) var(--s-24); font-size: var(--fs-16); }
+body.home .error { background: #FEF2F2; border: var(--rule) solid #FECACA; color: #991B1B; border-radius: var(--radius-sm);
+  padding: var(--s-8) var(--s-12); font-size: var(--fs-14); margin-bottom: var(--s-24); }
+@media (max-width: 480px) { body.home h1 { font-size: var(--fs-32); } }

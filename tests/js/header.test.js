@@ -65,6 +65,20 @@ test("沒登入：不顯示身分，也沒有老師入口", () => {
   assert.equal(logout, undefined);
 });
 
+test("老師開交件頁：說明只有學生能交件，並有回後台的連結", () => {
+  globalThis.document = { createElement: fakeElement };
+  const file = require.resolve("../../src/road_test/web/static/header.js");
+  delete require.cache[file];
+  const { renderStudentsOnly } = require(file);
+  const box = fakeElement("section");
+
+  renderStudentsOnly(box, "只有學生能交件");
+
+  const all = walk(box);
+  assert.ok(all.some(e => e.text === "只有學生能交件"));
+  assert.deepEqual(all.filter(e => e.tag === "a").map(e => [e.text, e.href]), [["回後台", "/admin"]]);
+});
+
 test("顯示名稱裡的 HTML 只當文字", () => {
   const name = '<img src=x onerror="alert(1)">';
 
