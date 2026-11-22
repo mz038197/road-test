@@ -1,38 +1,44 @@
-// 路考網站共用：記住金鑰、呼叫 API、文字格式
+// 路考網站共用：呼叫 API、文字格式
 const CLASS_NAMES = { car: "車", pedestrian: "行人", bicyclist: "騎車的人", sign: "號誌" };
 const STATUS_NAMES = {
   queued: "排隊中", scoring: "偵測計分幀中", filling: "成績出來了，正在補完其餘的幀",
   done: "全部完成", failed: "出錯了",
 };
 
-// router 的金鑰（課堂金鑰或個人金鑰，road-test ADR 0001）：只存在這個分頁（sessionStorage），關掉分頁就不見；
-// 不放 cookie、localStorage 或網址。api() 每個請求都帶 Authorization: Bearer。
-const API_KEY = "road-test-api-key";
+// 學生和老師的身分都在 HttpOnly cookie 裡，JavaScript 碰不到（road-test ADR 0003）。
+// 舊版貼金鑰時可能在這個分頁留下金鑰：一載入就清掉，不留在 JavaScript 讀得到的地方。
+try { sessionStorage.removeItem("road-test-api-key"); } catch { /* 讀不到就沒有 */ }
 
-function loadKey() {
-  try { return sessionStorage.getItem(API_KEY) || ""; } catch { return ""; }
-}
+// 這一頁是不是老師從後台來的：後台本身、從後台點進來的頁面，或伺服器說過這位能管理這筆路考。
+// 學生進不了後台頁，所以不會被判成這種情況，也就看不到老師的入口。
+let backOffice = false;
+function rememberBackOffice() { backOffice = true; }
 
-function saveKey(key) {
-  key = (key || "").trim();
+function cameFromBackOffice() {
   try {
-    if (key) sessionStorage.setItem(API_KEY, key); else sessionStorage.removeItem(API_KEY);
-  } catch { /* 存不了就每次重貼 */ }
+    const from = new URL(document.referrer);
+    return from.origin === location.origin && from.pathname === "/admin";
+  } catch {
+    return false;  // 沒有 referrer
+  }
 }
 
-// 呼叫 API 時帶的身分標頭：有金鑰就帶 Authorization（管理頁在同一個分頁打開 result.html，結果頁也帶老師的金鑰）
-function authHeaders() {
-  const key = loadKey();
-  return key ? { Authorization: `Bearer ${key}` } : {};
+function loginPage(notice) {
+  if (backOffice || location.pathname === "/admin" || cameFromBackOffice()) return "/admin";
+  return `/?notice=${encodeURIComponent(notice)}`;
 }
 
-// 呼叫 API；帶上 authHeaders()。失敗時丟出伺服器給的中文原因
+// 呼叫 API，cookie 由瀏覽器帶上。失敗時丟出伺服器給的中文原因。
+// 沒登入或登入失效時，伺服器在 401 帶 X-Login-Notice：老師回 /admin 重新登入，其他人回首頁顯示提示條
 async function api(path, options = {}) {
-  const headers = { ...authHeaders(), ...(options.headers || {}) };
-  const response = await fetch(path, { ...options, headers });
+  const response = await fetch(path, { ...options, headers: { ...(options.headers || {}) } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(typeof body.detail === "string" ? body.detail : `伺服器回應 ${response.status}`);
+    const notice = response.status === 401 && response.headers?.get("X-Login-Notice");
+    if (notice) location.replace(loginPage(notice));
+    const error = new Error(typeof body.detail === "string" ? body.detail : `伺服器回應 ${response.status}`);
+    error.studentsOnly = response.headers?.get("X-Students-Only") === "1";  // 登入的老師開了學生才能用的功能
+    throw error;
   }
   return body;
 }
@@ -64,5 +70,5 @@ function escapeHtml(s) {
 
 // node 測試用（tests/js/common.test.js）；瀏覽器裡沒有 module，什麼都不做
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { loadKey, saveKey, authHeaders, api };
+  module.exports = { api, rememberBackOffice };
 }

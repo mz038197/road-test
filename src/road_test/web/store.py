@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS class_members (  -- 組員：一個學生在一個班
     class_id     INTEGER NOT NULL,
     student_id   INTEGER NOT NULL,         -- router 的 student_id
     group_id     INTEGER NOT NULL REFERENCES class_groups (id),
-    display_name TEXT NOT NULL,            -- router 不給名字，學生選組時自己填
+    display_name TEXT NOT NULL,            -- router 給的顯示名稱，每次驗金鑰時更新
     joined_at    TEXT NOT NULL,
     PRIMARY KEY (class_id, student_id)
 );
@@ -218,9 +218,13 @@ class Store:
                 " WHERE s.class_id = ? ORDER BY s.id DESC", (class_id,)).fetchall()
 
     def of_class_group(self, group_id: int) -> list[sqlite3.Row]:
-        """這個班級組別的交件，新的在前面。"""
+        """這個班級組別的交件，新的在前面；display_name 是交件的學生現在的顯示名稱。"""
         with self._db() as db:
-            return db.execute(f"{WITH_GROUP_NAME} WHERE s.group_id = ? ORDER BY s.id DESC", (group_id,)).fetchall()
+            return db.execute(
+                "SELECT s.*, g.name AS group_name, m.display_name FROM submissions s"
+                " LEFT JOIN class_groups g ON g.id = s.group_id"
+                " LEFT JOIN class_members m ON m.class_id = s.class_id AND m.student_id = s.student_id"
+                " WHERE s.group_id = ? ORDER BY s.id DESC", (group_id,)).fetchall()
 
     def position(self, sid: int) -> int | None:
         """排第幾位（1 起算），不在排隊就是 None。排的順序跟 worker 拿的順序一樣。"""
@@ -233,7 +237,7 @@ class Store:
                 (QUEUED, row["priority"], row["priority"], row["id"])).fetchone()[0]
             return ahead + 1
 
-    # 班級的組別和正式路考開關（老師用個人金鑰管理）
+    # 班級的組別和正式路考開關（老師在後台管理）
     def class_groups(self, class_id: int) -> list[sqlite3.Row]:
         with self._db() as db:
             return db.execute("SELECT * FROM class_groups WHERE class_id = ? ORDER BY id", (class_id,)).fetchall()
@@ -298,6 +302,15 @@ class Store:
             except sqlite3.IntegrityError:
                 raise AlreadyMember from None
         return self.member(class_id, student_id)
+
+    def update_display_name(self, class_id: int, student_id: int, display_name: str) -> None:
+        """組員的顯示名稱跟著 router。每個請求都會呼叫，所以先讀：沒變就不開寫入交易。"""
+        with self._db() as db:
+            row = db.execute("SELECT display_name FROM class_members WHERE class_id = ? AND student_id = ?",
+                             (class_id, student_id)).fetchone()
+            if row is not None and row["display_name"] != display_name:
+                db.execute("UPDATE class_members SET display_name = ? WHERE class_id = ? AND student_id = ?",
+                           (display_name, class_id, student_id))
 
     def set_class_final(self, class_id: int, is_open: bool) -> None:
         with self._db() as db:

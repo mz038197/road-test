@@ -1,6 +1,6 @@
 """正式路考：老師替班級開關、每組的次數、CONF 鎖定、優先執行（HTTP API）。
 
-交件的是 56 班 01、02、03 組的學生（conftest 的 submit），老師用個人金鑰開關（set_final）。
+交件的是 56 班 01、02、03 組的學生（conftest 的 submit），老師用老師 cookie 開關（set_final）。
 """
 from conftest import as_group, records, run_queue, set_final, submit
 
@@ -9,7 +9,7 @@ def test_a_student_cannot_open_the_final(client) -> None:
     submit(client, group="01")
     response = client.put("/api/teacher/classes/56/final", json={"open": True}, headers=as_group("01"))
 
-    assert response.status_code == 403, "課堂金鑰不能開關正式路考"
+    assert response.status_code == 401, "學生的 cookie 不能開關正式路考"
     assert client.get("/api/student", headers=as_group("01")).json()["final_open"] is False
 
 

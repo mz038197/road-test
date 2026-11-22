@@ -1,6 +1,6 @@
 # 身分改用 router 的金鑰，組別依班級分開
 
-狀態：已採用。對應 vans_coding_router 的 ADR 0080（road-test 是 Partner Service）。
+狀態：已採用，部分由 ADR 0003 修改（登入、顯示名稱、老師的金鑰）。對應 vans_coding_router 的 ADR 0080（road-test 是 Partner Service）。
 
 路考網站不再用組別代碼和共用的老師密碼。學生帶課堂金鑰，老師帶個人金鑰，每個請求都放在 `Authorization: Bearer`。網站自己呼叫 router 的 key-check（router ADR 0082，沒有共用套件），通過的結果留 60 秒，被拒時直接顯示 router 給的訊息。金鑰放在瀏覽器的 `sessionStorage`，網站不存、不寫進記錄。`<video>` 不能帶標頭，所以照舊用簽章網址，只發給驗過金鑰的人。
 

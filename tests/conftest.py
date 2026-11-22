@@ -13,6 +13,9 @@ from fastapi.testclient import TestClient
 from road_test.detector import ModelRejected
 from road_test.web.app import RoadTest, create_app
 from road_test.web.key_check import KeyCheck
+from road_test.web.oauth import OAuthClient, TeacherGrant
+from road_test.web.router import FakeRouter, RealRouter
+from road_test.web.teacher_classes import TeacherClasses
 
 CLASSES = ["car", "pedestrian", "bicyclist", "sign"]
 PED = [100, 100, 140, 200]
@@ -55,7 +58,7 @@ def model(boxes: dict | None = None, names: list[str] = CLASSES, crash: bool = F
     return json.dumps({"names": names, "boxes": boxes, "crash": crash}).encode()
 
 
-# 金鑰：假的 router 依金鑰回答 router 的合約範例檔（tests/contracts/key-check/，複製自 router commit bff594f）
+# 金鑰：假的 router 依金鑰回答 router 的合約範例檔（tests/contracts/key-check/，複製自 router 的 docs/contracts/key-check/）
 CONTRACTS = Path(__file__).parent / "contracts" / "key-check"
 TEACHER_KEY = "vcr_sk_teacher" + "t" * 40      # 個人金鑰，管理 56「週一 程式設計」、57「週三 進階班」
 ADMIN_KEY = "vcr_sk_admin00" + "a" * 40        # admin 的個人金鑰：classes 是所有班級
@@ -78,28 +81,84 @@ def router_answers() -> dict[str, dict]:
         TEACHER_KEY: personal,
         ADMIN_KEY: {**personal, "user_id": 1, "is_admin": True, "classes": ALL_CLASSES},
         NO_CLASS_KEY: {**personal, "user_id": 77, "classes": []},
-        CLASSROOM_KEY: contract("classroom-accepted"),
-        CLASSMATE_KEY: {**contract("classroom-accepted"), "student_id": 1235},
-        THIRD_KEY: {**contract("classroom-accepted"), "student_id": 1236},
-        OTHER_CLASS_KEY: {**contract("classroom-accepted"), "student_id": 2001, "class_id": 57, "class_session_id": 790},
+        CLASSROOM_KEY: {**contract("classroom-accepted"), "display_name": "小明"},
+        CLASSMATE_KEY: {**contract("classroom-accepted"), "student_id": 1235, "display_name": "小華"},
+        THIRD_KEY: {**contract("classroom-accepted"), "student_id": 1236, "display_name": "小美"},
+        OTHER_CLASS_KEY: {**contract("classroom-accepted"), "student_id": 2001, "class_id": 57, "class_session_id": 790,
+                          "display_name": "別班的"},
     }
 
 
-def fake_router_key_check() -> KeyCheck:
-    """road-test 自己的 Key Check 用戶端，接到假的 router（在 HTTP 邊界上換掉）。"""
+def teacher_contract(name: str) -> dict:
+    path = CONTRACTS.parent / "teacher-classes" / f"{name}.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+# 老師的 router user id（teacher-classes 的回答）
+TEACHER_ID, ADMIN_ID, NO_CLASS_ID = 42, 1, 77
+TEACHERS = {
+    TEACHER_ID: teacher_contract("accepted"),
+    ADMIN_ID: {**teacher_contract("accepted"), "user_id": ADMIN_ID, "is_admin": True, "classes": ALL_CLASSES},
+    NO_CLASS_ID: {**teacher_contract("accepted"), "user_id": NO_CLASS_ID, "classes": []},
+}
+
+
+def fake_router() -> RealRouter:
+    """假的 router：只換掉 HTTP 那一層，網站自己的 Key Check 用戶端（快取、記錄、錯誤處理）照樣跑。"""
     answers = router_answers()
 
-    def router(request: httpx.Request) -> httpx.Response:
+    def http(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/internal/teacher-classes":
+            answer = TEACHERS.get(json.loads(request.content)["user_id"])
+            return httpx.Response(200, json=answer or teacher_contract("refused"))
         key = json.loads(request.content)["api_key"]
         if key == DOWN_KEY:
             return httpx.Response(503)
         return httpx.Response(200, json=answers.get(key, contract("refused")))
 
-    return KeyCheck("https://router.test", "road-test-credential", transport=httpx.MockTransport(router))
+    transport = httpx.MockTransport(http)
+    return RealRouter(KeyCheck("https://router.test", "road-test-credential", transport=transport),
+                      OAuthClient("https://router.test", "road-test", "client-secret", "https://site.test",
+                                  transport=transport),
+                      TeacherClasses("https://router.test", "road-test-credential", transport=transport))
 
 
 def bearer(key: str) -> dict:
     return {"Authorization": f"Bearer {key}"}
+
+
+def as_student(key: str) -> dict:
+    """登入的學生：課堂金鑰在 cookie 裡。"""
+    return {"Cookie": f"road_test_classroom={key}"}
+
+
+# 測試站共用的老師 cookie 簽章密語；cookie 是走一次真的登入流程拿到的（見 teacher_cookies）
+TEACHER_COOKIE_SECRET = "teacher-cookie-secret-for-tests"
+TEACHER_USERS = {TEACHER_KEY: TEACHER_ID, ADMIN_KEY: ADMIN_ID, NO_CLASS_KEY: NO_CLASS_ID}
+_teacher_cookies: dict[int, str] = {}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def teacher_cookies(tmp_path_factory):
+    """每位測試老師登入一次，留下 cookie。後面的測試帶它進後台，不用每次跑登入。"""
+    data = tmp_path_factory.mktemp("teacher-login")
+    (data / "answers").mkdir()
+    router = FakeRouter({})
+    app = create_app(data, load_detector=FakeDetector, workers=0, router=router,
+                     teacher_cookie_secret=TEACHER_COOKIE_SECRET,
+                     road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT)})
+    for user_id in TEACHER_USERS.values():
+        router.teacher_login_as = TeacherGrant(user_id, "測試老師")
+        with TestClient(app, base_url="https://testserver") as c:
+            c.get("/auth/teacher/login")
+            _teacher_cookies[user_id] = c.cookies["road_test_teacher"]
+
+
+def signed_in(key: str) -> dict:
+    """這個人的憑證：老師帶老師 cookie，學生帶放課堂金鑰的 cookie。"""
+    if key in TEACHER_USERS:
+        return {"Cookie": f"road_test_teacher={_teacher_cookies[TEACHER_USERS[key]]}"}
+    return as_student(key)
 
 
 @pytest.fixture
@@ -115,11 +174,12 @@ def open_site(data_dir: Path):
     opened = []
 
     def open_(**options) -> TestClient:
-        options.setdefault("verify_key", fake_router_key_check().check)
+        options.setdefault("router", fake_router())
+        options.setdefault("teacher_cookie_secret", TEACHER_COOKIE_SECRET)
         app = create_app(data_dir, load_detector=FakeDetector,
                          road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT),
                                      "final": RoadTest("final", "Mini", FRAME_COUNT)}, workers=0, **options)
-        c = TestClient(app)
+        c = TestClient(app, base_url="https://testserver")  # 登入的 cookie 是 Secure，只在 https 送出
         c.__enter__()
         opened.append(c)
         return c
@@ -141,13 +201,12 @@ CLASS_ID = 56
 
 def seat(client: TestClient) -> None:
     """老師替 56 班建好 01、02、03 組，每個學生選進自己那組（已經建好就不再建）。"""
-    if client.get(f"/api/teacher/classes/{CLASS_ID}", headers=bearer(TEACHER_KEY)).json()["groups"]:
+    if client.get(f"/api/teacher/classes/{CLASS_ID}", headers=signed_in(TEACHER_KEY)).json()["groups"]:
         return
     for group, key in STUDENTS.items():
         gid = client.post(f"/api/teacher/classes/{CLASS_ID}/groups", json={"name": group},
-                          headers=bearer(TEACHER_KEY)).json()["id"]
-        joined = client.post("/api/student/group", json={"group_id": gid, "display_name": f"{group} 組的學生"},
-                             headers=bearer(key))
+                          headers=signed_in(TEACHER_KEY)).json()["id"]
+        joined = client.post("/api/student/group", json={"group_id": gid}, headers=as_student(key))
         assert joined.status_code == 201, joined.text
 
 
@@ -171,7 +230,7 @@ def run_queue(client: TestClient) -> None:
 
 def as_group(group: str) -> dict:
     """這組的學生的課堂金鑰。"""
-    return bearer(STUDENTS[group])
+    return as_student(STUDENTS[group])
 
 
 def records(client: TestClient, group: str) -> list[dict]:
@@ -185,5 +244,6 @@ def records(client: TestClient, group: str) -> list[dict]:
 def set_final(client: TestClient, is_open: bool):
     """老師開關 56 班的正式路考。"""
     seat(client)
-    return client.put(f"/api/teacher/classes/{CLASS_ID}/final", json={"open": is_open}, headers=bearer(TEACHER_KEY))
+    return client.put(f"/api/teacher/classes/{CLASS_ID}/final", json={"open": is_open},
+                      headers=signed_in(TEACHER_KEY))
 

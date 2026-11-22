@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "invalid_teacher_classes_body",
+    "message": "The body must be a JSON object with an integer \"user_id\"."
+  }
+}

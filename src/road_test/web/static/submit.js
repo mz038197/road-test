@@ -1,7 +1,6 @@
-// 交件頁（submit.html）：學生貼課堂 API Key（road-test ADR 0001）→ 第一次進來選組別、填顯示名稱（之後鎖定）
+// 交件頁（submit.html）：登入的學生（身分在 HttpOnly cookie，road-test ADR 0003）第一次進來選組別（之後鎖定）
 // → 交模擬路考或正式路考、看自己這組的路考紀錄（正式、模擬分開列）。
-// 金鑰存在這個分頁的 sessionStorage（common.js 的 saveKey），api() 每個請求都帶 Authorization: Bearer。
-// 被拒時直接顯示伺服器轉來的 router 訊息。
+// 沒登入或登入失效時 api() 會回首頁；router 連不上時留在這頁，可以再試一次。
 const $ = id => document.getElementById(id);
 const form = $("submit");
 const kindInputs = [...form.querySelectorAll('input[name="kind"]')];
@@ -12,13 +11,13 @@ function kind() {
 }
 
 function show(part) {
-  for (const id of ["login", "not-open", "join", "work"]) $(id).hidden = id !== part;
+  for (const id of ["problem", "students-only", "not-open", "join", "work"]) $(id).hidden = id !== part;
 }
 
-function showLogin(message) {
-  show("login");
+function showProblem(message) {
+  show("problem");
   $("final-banner").hidden = true;
-  $("login-error").textContent = message || "";
+  $("problem-text").textContent = message;
 }
 
 // 進來的人現在是什麼狀態：班級沒有組別、還沒選組、已經選好組
@@ -27,11 +26,14 @@ async function enter() {
   try {
     me = await api("/api/student");
   } catch (e) {
-    saveKey("");
-    showLogin(e.message);
+    if (e.studentsOnly) {
+      renderStudentsOnly($("students-only"), e.message);
+      show("students-only");
+      return;
+    }
+    showProblem(e.message);
     return;
   }
-  $("login-error").textContent = "";
   if (me.groups.length === 0) {
     show("not-open");
     return;
@@ -42,7 +44,7 @@ async function enter() {
     show("join");
     return;
   }
-  $("me").textContent = `${me.member.group_name}・${me.member.display_name}`;
+  $("me").textContent = `${me.member.group_name}：${me.members.join("、")}`;
   show("work");
   showRoadTests(me);
   loadRecords();
@@ -80,17 +82,7 @@ function updateKind() {
 
 kindInputs.forEach(i => i.addEventListener("change", updateKind));
 
-$("login").addEventListener("submit", event => {
-  event.preventDefault();
-  saveKey($("api-key").value);
-  $("api-key").value = "";
-  enter();
-});
-
-$("logout").addEventListener("click", () => {
-  saveKey("");
-  showLogin("");
-});
+$("retry").addEventListener("click", enter);
 
 $("join").addEventListener("submit", async event => {
   event.preventDefault();
@@ -101,7 +93,7 @@ $("join").addEventListener("submit", async event => {
   try {
     await api("/api/student/group", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ group_id: Number($("join-group").value), display_name: $("display-name").value }),
+      body: JSON.stringify({ group_id: Number($("join-group").value) }),
     });
     $("join-error").textContent = "";
     await enter();
@@ -138,6 +130,7 @@ function recordRows(records) {
   return records.map(r => `
     <tr>
       <td><a href="result.html?id=${r.id}">${when(r.uploaded_at)}</a></td>
+      <td>${escapeHtml(r.display_name ?? "")}</td>
       <td>${escapeHtml(r.filename)}</td>
       <td class="num">${r.conf}</td>
       <td>${STATUS_NAMES[r.status] || r.status}</td>
@@ -166,4 +159,4 @@ async function loadRecords() {
 
 $("show-records").addEventListener("click", loadRecords);
 
-if (loadKey()) enter(); else showLogin("");
+enter();

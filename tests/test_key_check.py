@@ -1,7 +1,7 @@
 """road-test 自己的 Key Check 用戶端（router ADR 0082）：HTTP 用 httpx.MockTransport 回放 router 的合約範例檔。
 
 範例檔在 tests/contracts/key-check/，從 vans_coding_router 的 docs/contracts/key-check/ 複製
-（router commit bff594f，#94）。router 改了範例就重新複製一份。
+（含 router ADR 0095 的 display_name）。router 改了範例就重新複製一份。
 """
 import json
 import threading
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import httpx
 
-from road_test.web.key_check import ClassRef, KeyCheck, Refusal
+from road_test.web.key_check import KeyCheck, Refusal
 
 CONTRACTS = Path(__file__).parent / "contracts" / "key-check"
 KEY = "vcr_sk_" + "a1b2c3d4" * 6
@@ -57,7 +57,7 @@ def test_a_classroom_key_comes_back_as_a_student_of_its_class() -> None:
 
     who = key_check(router).check(KEY)
 
-    assert (who.kind, who.student_id, who.class_id, who.class_session_id) == ("classroom", 1234, 56, 789)
+    assert (who.student_id, who.class_id, who.class_session_id) == (1234, 56, 789)
     request = router.requests[0]
     assert (request.method, request.url.path) == ("POST", "/internal/key-check")
     assert request.headers["Authorization"] == f"Bearer {CREDENTIAL}", "用 road-test 自己的 Service Credential"
@@ -65,22 +65,23 @@ def test_a_classroom_key_comes_back_as_a_student_of_its_class() -> None:
     assert KEY not in str(request.url)
 
 
-def test_a_personal_key_comes_back_with_the_classes_it_manages() -> None:
-    who = key_check(FakeRouter(contract("personal-accepted"))).check(KEY)
+def test_a_personal_key_is_refused_and_is_not_mistaken_for_an_outage() -> None:
+    """Key Check 的合約還會回 personal；ADR 0003 之後路考網站只收課堂金鑰。"""
+    answer = key_check(FakeRouter(contract("personal-accepted"))).check(KEY)
 
-    assert (who.kind, who.user_id, who.is_admin) == ("personal", 42, False)
-    assert who.classes == (ClassRef(56, "週一 程式設計"), ClassRef(57, "週三 進階班")), "班級帶名稱，畫面才顯示得出來"
-    assert who.is_teacher, "classes 不是空的就有老師身分"
+    assert answer == Refusal("invalid", "無效的 API 金鑰")
 
 
-def test_a_personal_key_without_classes_has_no_teacher_standing() -> None:
-    answer = {**contract("personal-accepted"), "classes": []}
+def test_an_accepted_key_carries_the_display_name_from_the_router() -> None:
+    assert key_check(FakeRouter(contract("classroom-accepted"))).check(KEY).display_name == "07王小明"
+
+
+def test_a_router_that_does_not_send_a_display_name_yet_still_accepts_the_key() -> None:
+    answer = {k: v for k, v in contract("classroom-accepted").items() if k != "display_name"}
 
     who = key_check(FakeRouter(answer)).check(KEY)
 
-    assert not who.is_teacher, "is_admin 為假、classes 是空的：不是老師（router ADR 0083）"
-    admin = key_check(FakeRouter({**answer, "is_admin": True})).check(KEY)
-    assert admin.is_teacher
+    assert (who.student_id, who.display_name) == (1234, ""), "router 還沒部署 ADR 0095 時，學生照常能用"
 
 
 def test_a_refusal_carries_the_routers_message() -> None:

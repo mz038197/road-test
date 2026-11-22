@@ -7,8 +7,12 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="wide">
+<header class="site-header">
+  <a class="brand" href="/"><img src="/logo.svg" alt="" width="28" height="28"><span>路考網站</span></a>
+  <nav id="site-actions" aria-label="帳號"></nav>
+</header>
 <main>
-  <p><a href="submit.html">← 回交件頁</a>　<a href="teacher.html">管理頁</a>　<a href="./">委託</a></p>
+  <p id="page-links"><a href="submit.html">← 回交件頁</a>　<a href="/brief">委託</a></p>
   <h1 id="title">路考結果</h1>
   <p class="muted" id="meta"></p>
 
@@ -34,6 +38,7 @@
   <section id="player"></section>
 </main>
 <script src="common.js"></script>
+<script src="header.js"></script>
 <script src="playback.js"></script>
 <script src="player.js"></script>
 <script src="result.js"></script>
