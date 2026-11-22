@@ -100,20 +100,17 @@ def _video_key(data_dir: Path) -> bytes:
 def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_tests: dict[str, RoadTest], *,
                workers: int, router: Router, fill_chunk: int = 500, student_dir: Path | None = None,
                clock: Callable[[], float] = time.time, cookie_secret: str | None = None,
-               teacher_cookie_secret: str | None = None,
                max_upload_bytes: int = DEFAULT_MAX_UPLOAD_MB * 1_000_000) -> FastAPI:
     """data_dir：路考資料夾；load_detector：讀模型檔的函式（讀不進來要丟 ModelRejected）；
     road_tests：{"mock": RoadTest, "final": RoadTest}；workers：背景 worker 數（main 用 settings.from_env 的預設），0 就不開（測試自己跑 run_until_idle）；
     student_dir：發給學生的訓練程式（預設 paths.student_dir()）；clock：現在幾秒（測試換成假時鐘）；
     max_upload_bytes：交件的大小上限（超過回 413，見 upload_limit.py）；
     router：router 介面，跟 router 打交道的事都經過它（見 router.py；main 依環境選，測試接假的 router）；
-    cookie_secret：登入途中那張 cookie 的簽章密語（ROAD_TEST_COOKIE_SECRET）；沒給就每次啟動隨機產生，
-    只影響重啟當下正在登入的人；
-    teacher_cookie_secret：老師 cookie 的簽章密語（ROAD_TEST_TEACHER_COOKIE_SECRET，正式環境由 main 要求一定要有）；
-    沒給就每次啟動隨機產生（本機開發），重啟後老師要重新登入。
+    cookie_secret：老師 cookie 和登入途中 cookie 共用的簽章密語（ROAD_TEST_TEACHER_COOKIE_SECRET，正式環境由 main
+    要求一定要有）；沒給就每次啟動隨機產生（本機開發），重啟後老師要重新登入。
     """
-    login_secret = (cookie_secret or secrets.token_hex(32)).encode()
-    teacher_cookie = TeacherCookie((teacher_cookie_secret or secrets.token_hex(32)).encode(), clock)
+    signing_secret = (cookie_secret or secrets.token_hex(32)).encode()
+    teacher_cookie = TeacherCookie(signing_secret, clock)
     data_dir = Path(data_dir)
     student_dir = Path(student_dir) if student_dir else paths.student_dir()
     store = Store(data_dir)
@@ -409,7 +406,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             raise HTTPException(404, "找不到路考影片，請通知老師。")
         return FileResponse(path, media_type="video/mp4")
 
-    app.include_router(login_routes(router, clock, login_secret, teacher_cookie))
+    app.include_router(login_routes(router, clock, signing_secret, teacher_cookie))
 
     @app.get(ADMIN_PATH)
     def admin(request: Request):

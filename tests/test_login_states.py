@@ -39,7 +39,7 @@ def fake(data_dir) -> FakeRouter:
 @pytest.fixture
 def site(data_dir, fake):
     app = create_app(data_dir, load_detector=FakeDetector, workers=0, router=fake,
-                     teacher_cookie_secret=TEACHER_SECRET,
+                     cookie_secret=TEACHER_SECRET,
                      road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT),
                                  "final": RoadTest("final", "Mini", FRAME_COUNT)})
     with TestClient(app, base_url="https://testserver", follow_redirects=False) as client:
@@ -277,23 +277,20 @@ def test_nobody_else_sees_the_back_office_on_the_home_page(site, sign_in) -> Non
     assert "進入後台" not in page and "/admin" not in page
 
 
-# 正式環境一定要有登入 cookie 的簽章密語
+# 正式環境只要一把 cookie 簽章密語
 
 
-@pytest.mark.parametrize("value", [None, "   "])
-def test_production_refuses_to_start_without_the_login_cookie_secret(monkeypatch, value) -> None:
+def test_production_starts_with_the_one_cookie_secret(monkeypatch, data_dir) -> None:
     monkeypatch.setenv("FLY_APP_NAME", "road-test")
     monkeypatch.setenv("ROAD_TEST_ROUTER", "real")
+    monkeypatch.setenv("ROAD_TEST_DATA", str(data_dir))
     monkeypatch.setenv("ROAD_TEST_TEACHER_COOKIE_SECRET", "set")
-    if value is None:
-        monkeypatch.delenv("ROAD_TEST_COOKIE_SECRET", raising=False)
-    else:
-        monkeypatch.setenv("ROAD_TEST_COOKIE_SECRET", value)
+    monkeypatch.delenv("ROAD_TEST_COOKIE_SECRET", raising=False)
+    monkeypatch.setattr(main, "frame_count", lambda video: FRAME_COUNT)
 
-    with pytest.raises(SystemExit) as e:
-        main.build_app(main.settings.from_env({}, 2))
+    app = main.build_app(main.settings.from_env({}, 2))
 
-    assert "ROAD_TEST_COOKIE_SECRET" in str(e.value)
+    assert app.title
 
 
 # 顯示名稱每次 Key Check 都跟著 router
