@@ -6,6 +6,8 @@
   VANS_SIGNALS_URL、VANS_SIGNALS_TOKEN  錯誤送到 vans-signals（兩個都設定才送，見 signals.py）
   VCR_URL、VCR_SERVICE_CREDENTIAL  router 的 Key Check（驗課堂金鑰、個人金鑰，見 key_check.py）
   ROAD_TEST_ROUTER        real（預設）或 fake（本機開發用，正式環境拒絕啟動，見 router.py）
+  VCR_OAUTH_CLIENT_ID、VCR_OAUTH_CLIENT_SECRET、ROAD_TEST_PUBLIC_URL  登入（見 oauth.py）
+  ROAD_TEST_COOKIE_SECRET 登入 cookie 的簽章密語（Fly secret）
 """
 import argparse
 import os
@@ -42,7 +44,8 @@ def build_app(config: settings.Settings | None = None):
     road_tests = {kind: RoadTest(kind, seq, frame_count(paths.videos_dir() / f"{seq}.mp4"))
                   for kind, seq in SEQUENCES.items()}
     return create_app(paths.data_dir(), partial(OnnxDetector, threads=config.threads), road_tests,
-                      workers=config.workers, max_upload_bytes=config.max_upload_bytes, router=router)
+                      workers=config.workers, max_upload_bytes=config.max_upload_bytes, router=router,
+                      cookie_secret=(os.environ.get("ROAD_TEST_COOKIE_SECRET") or "").strip() or None)
 
 
 def main(argv: list[str] | None = None) -> None:

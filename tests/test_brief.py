@@ -1,12 +1,24 @@
-"""委託頁：學生完全從路考網站開始。首頁就是委託（說明、注意事項），從這裡下載訓練影片、訓練程式，再去交件頁交模型。"""
+"""委託頁 /brief：登入的學生從這裡下載訓練影片、訓練程式，再去交件頁交模型。"""
 import re
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 import pytest
 
+from road_test.web.router import FakeRouter
+
+from conftest import CLASSROOM_KEY, router_answers
+
 STUDENT = Path(__file__).parents[1] / "student"
 VIDEO = bytes(range(256)) * 40  # 假的訓練影片，10240 bytes
+
+
+@pytest.fixture
+def client(open_site):
+    """登入好的學生：這個檔案看的都是登入之後的委託頁。"""
+    signed_in = open_site(router=FakeRouter(router_answers(), login_as=CLASSROOM_KEY))
+    assert signed_in.get("/auth/student/login").url.path == "/brief"
+    return signed_in
 
 
 @pytest.fixture
@@ -16,10 +28,10 @@ def training_video(data_dir):
     return VIDEO
 
 
-def test_anyone_can_download_the_training_video_without_a_group_code(client, training_video) -> None:
+def test_a_signed_in_student_can_download_the_training_video(client, training_video) -> None:
     response = client.get("/downloads/0016E5.mp4")
 
-    assert response.status_code == 200, f"訓練影片不需要金鑰就能下載：{response.text}"
+    assert response.status_code == 200, f"登入後就能下載訓練影片：{response.text}"
     assert response.content == training_video
     assert response.headers["content-type"] == "video/mp4"
     assert "attachment" in response.headers.get("content-disposition", ""), "按連結要直接存檔，不是在分頁裡播"
@@ -39,10 +51,10 @@ def test_missing_training_video_says_so_in_chinese(client) -> None:
     assert "訓練影片" in response.json()["detail"], "找不到時要說是訓練影片不見了，請學生通知老師"
 
 
-def test_anyone_can_download_the_local_training_program(client) -> None:
+def test_a_signed_in_student_can_download_the_local_training_program(client) -> None:
     response = client.get("/downloads/train_yolo.py")
 
-    assert response.status_code == 200, f"本機訓練程式不需要金鑰就能下載：{response.text}"
+    assert response.status_code == 200, f"登入後就能下載本機訓練程式：{response.text}"
     assert response.content == (STUDENT / "train_yolo.py").read_bytes(), "下載的要是 repo 裡 student/ 的那一支"
     assert "attachment" in response.headers.get("content-disposition", ""), "按連結要直接存成 train_yolo.py"
 
@@ -50,8 +62,8 @@ def test_anyone_can_download_the_local_training_program(client) -> None:
 COLAB = "https://colab.research.google.com/github/mz038197/road-test/blob/main/student/train_yolo_colab.ipynb"
 
 
-def test_the_home_page_is_the_brief(client) -> None:
-    page = client.get("/").text
+def test_the_brief_page_has_the_steps_and_downloads(client) -> None:
+    page = client.get("/brief").text
 
     assert COLAB in page, "「在 Colab 開啟」要直接打開 GitHub 上 road-test repo main 的訓練筆記本"
     assert (STUDENT / "train_yolo_colab.ipynb").is_file(), "Colab 連結指的筆記本要在 repo 的 student/ 裡"
@@ -69,7 +81,7 @@ def test_the_submission_form_moved_to_its_own_page(client) -> None:
     assert 'id="submit"' in page.text and "submit.js" in page.text, "交件表單在 submit.html"
 
 
-@pytest.mark.parametrize("page", ["/", "/submit.html", "/result.html", "/teacher.html"])
+@pytest.mark.parametrize("page", ["/brief", "/submit.html", "/result.html", "/teacher.html"])
 def test_every_link_on_the_site_pages_works(client, training_video, page: str) -> None:
     html = client.get(page).text
     links = re.findall(r'(?:href|src)="([^"#?]+)', html)
@@ -82,7 +94,7 @@ def test_every_link_on_the_site_pages_works(client, training_video, page: str) -
         assert response.status_code == 200, f"{page} 裡的 {link} 打不開（{response.status_code}）"
 
 
-@pytest.mark.parametrize("page", ["/", "/submit.html"])
+@pytest.mark.parametrize("page", ["/brief", "/submit.html"])
 def test_step_navigation_jumps_to_each_step(client, page: str) -> None:
     html = client.get(page).text
     anchors = re.findall(r'href="#([^"]+)"', html)
@@ -93,7 +105,7 @@ def test_step_navigation_jumps_to_each_step(client, page: str) -> None:
     assert not missing, f"{page} 的步驟導覽連到不存在的地方：{missing}"
 
 
-@pytest.mark.parametrize("page", ["/", "/submit.html"])
+@pytest.mark.parametrize("page", ["/brief", "/submit.html"])
 def test_step_navigation_reads_each_number_as_a_step(client, page: str) -> None:
     html = client.get(page).text
     nav = re.search(r'<nav class="[^"]*step-nav.*?</nav>', html, re.S).group(0)
@@ -104,7 +116,7 @@ def test_step_navigation_reads_each_number_as_a_step(client, page: str) -> None:
     assert spoken == [f"第 {n} 步：" for n in numbers], f"{page} 的步驟編號要念成「第 N 步」，不要跟後面的字黏在一起：{spoken}"
 
 
-@pytest.mark.parametrize("page", ["/", "/submit.html", "/result.html", "/teacher.html"])
+@pytest.mark.parametrize("page", ["/brief", "/submit.html", "/result.html", "/teacher.html"])
 def test_pages_load_nothing_from_other_sites(client, page: str) -> None:
     html = client.get(page).text
     external = re.findall(r'<(?:link|script)[^>]+(?:href|src)="(https?://[^"]+)"', html)

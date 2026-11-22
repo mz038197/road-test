@@ -16,13 +16,14 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from road_test import paths
 from road_test.detector import CLASSES, Detector, ModelRejected
 from road_test.web.key_check import ClassRef, Identity, Refusal
+from road_test.web.login import NOTICES, classroom_identity, clear_classroom_cookie, go_home, login_routes
 from road_test.web.router import Router
 from road_test.web.upload_limit import UploadLimit
 from road_test.web.results import score_result
@@ -33,6 +34,10 @@ from road_test.web.worker import Worker
 log = logging.getLogger(__name__)
 
 STATIC = Path(__file__).parent / "static"
+PAGES = Path(__file__).parent / "pages"  # 要經過後端的頁面（首頁、委託頁），不放 static，才不會繞過登入
+SIGNED_OUT_ACTIONS = '<p><a class="button" href="/auth/student/login">登入</a></p>'
+SIGNED_IN_ACTIONS = ('<p><a class="button" href="/brief">進入路考</a></p>'
+                     '<form method="post" action="/auth/logout"><button class="secondary">登出</button></form>')
 KIND_NAMES = {"mock": "模擬路考", "final": "正式路考"}
 TRAINING_VIDEO = "0016E5"  # 訓練影片，在路考資料夾的 videos/ 裡；不會出現在路考裡
 VIDEO_URL_HOURS = 6  # 路考影片網址幾小時後失效（結果頁每次拿成績都會拿到新的網址）
@@ -85,14 +90,17 @@ def _video_key(data_dir: Path) -> bytes:
 
 def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_tests: dict[str, RoadTest], *,
                workers: int, router: Router, fill_chunk: int = 500, student_dir: Path | None = None,
-               clock: Callable[[], float] = time.time,
+               clock: Callable[[], float] = time.time, cookie_secret: str | None = None,
                max_upload_bytes: int = DEFAULT_MAX_UPLOAD_MB * 1_000_000) -> FastAPI:
     """data_dir：路考資料夾；load_detector：讀模型檔的函式（讀不進來要丟 ModelRejected）；
     road_tests：{"mock": RoadTest, "final": RoadTest}；workers：背景 worker 數（main 用 settings.from_env 的預設），0 就不開（測試自己跑 run_until_idle）；
     student_dir：發給學生的訓練程式（預設 paths.student_dir()）；clock：現在幾秒（測試換成假時鐘）；
     max_upload_bytes：交件的大小上限（超過回 413，見 upload_limit.py）；
-    router：router 介面，跟 router 打交道的事都經過它（見 router.py；main 依環境選，測試接假的 router）。
+    router：router 介面，跟 router 打交道的事都經過它（見 router.py；main 依環境選，測試接假的 router）；
+    cookie_secret：登入途中那張 cookie 的簽章密語（ROAD_TEST_COOKIE_SECRET）；沒給就每次啟動隨機產生，
+    只影響重啟當下正在登入的人。
     """
+    login_secret = (cookie_secret or secrets.token_hex(32)).encode()
     data_dir = Path(data_dir)
     student_dir = Path(student_dir) if student_dir else paths.student_dir()
     store = Store(data_dir)
@@ -341,8 +349,52 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             raise HTTPException(404, "找不到路考影片，請通知老師。")
         return FileResponse(path, media_type="video/mp4")
 
-    # 委託頁（index.html）的下載：不需要金鑰
-    @app.get(f"/downloads/{TRAINING_VIDEO}.mp4")
+    app.include_router(login_routes(router, clock, login_secret))
+
+    @app.get("/", response_class=HTMLResponse)
+    def home(request: Request, notice: str = ""):
+        """首頁：沒登入只有網站名稱、說明和「登入」；提示條的文字只從 NOTICES 來。"""
+        signed_in = isinstance(classroom_identity(request, router), Identity)
+        message = NOTICES.get(notice)
+        html = (PAGES / "home.html").read_text(encoding="utf-8")
+        html = html.replace("<!--notice-->", f'<p class="error" role="alert">{message}</p>' if message else "")
+        html = html.replace("<!--actions-->", SIGNED_IN_ACTIONS if signed_in else SIGNED_OUT_ACTIONS)
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache", "Vary": "Cookie"})
+
+    @app.get("/index.html", include_in_schema=False)
+    def old_home():
+        return RedirectResponse("/", status_code=302)
+
+    @app.get("/brief")
+    def brief(request: Request):
+        """委託頁：要登入。Key Check 拒絕就清 cookie 回首頁；router 連不上時不清 cookie。"""
+        who = classroom_identity(request, router)
+        if who is None:
+            return go_home("login_required")
+        if isinstance(who, Refusal):
+            if who.reason == "unavailable":
+                return go_home("unavailable")
+            response = go_home("expired")
+            clear_classroom_cookie(response)
+            return response
+        return FileResponse(PAGES / "brief.html", media_type="text/html",
+                            headers={"Cache-Control": "private, no-cache", "Vary": "Cookie"})
+
+    def signed_in(request: Request) -> Identity:
+        """下載要登入：沒登入或金鑰失效回 401（失效時清 cookie），router 連不上回 503、不清 cookie。"""
+        who = classroom_identity(request, router)
+        if who is None:
+            raise HTTPException(401, NOTICES["login_required"])
+        if isinstance(who, Refusal):
+            if who.reason == "unavailable":
+                raise HTTPException(503, who.message)
+            cleared = Response()
+            clear_classroom_cookie(cleared)
+            raise HTTPException(401, NOTICES["expired"], headers={"Set-Cookie": cleared.headers["set-cookie"]})
+        return who
+
+    # 委託頁的下載：要登入
+    @app.get(f"/downloads/{TRAINING_VIDEO}.mp4", dependencies=[Depends(signed_in)])
     def training_video():
         """訓練影片：學生自己挑幀標註。支援 Range，下載中斷可以接著下。"""
         path = data_dir / "videos" / f"{TRAINING_VIDEO}.mp4"
@@ -350,7 +402,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             raise HTTPException(404, "找不到訓練影片，請通知老師。")
         return FileResponse(path, media_type="video/mp4", filename=path.name)
 
-    @app.get("/downloads/train_yolo.py")
+    @app.get("/downloads/train_yolo.py", dependencies=[Depends(signed_in)])
     def training_program():
         """本機訓練程式（Colab 版在 GitHub，委託頁用「在 Colab 開啟」連過去）。"""
         path = student_dir / "train_yolo.py"

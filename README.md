@@ -14,13 +14,17 @@ src/road_test/      Python 套件，網站和老師工具都從這裡 import
   web/              路考網站（FastAPI）
     app.py          HTTP API；create_app(資料夾, 偵測器, 路考, router=…) 讓測試換成假偵測器、假的 router
     router.py       router 介面：跟 router 打交道的事都經過它；正式環境接真的，測試和本機開發接假的
+    oauth.py        到 router 登入、用授權碼換課堂金鑰（state、PKCE）
+    login.py        /auth 的登入、callback、登出和 cookie
     key_check.py    呼叫 router 的 Key Check 驗課堂金鑰、個人金鑰（通過的留 60 秒）
     store.py        交件、偵測結果、成績、組別、組員存在 SQLite
     worker.py       排隊：先偵測計分幀算成績，再補完其餘的幀
     results.py      偵測框 → 成績（加上影片幀號）
     main.py         road-test-site 啟動指令
+    pages/          要經過後端的頁面
+      home.html     首頁 /：網站名稱、說明和「登入」
+      brief.html    委託頁 /brief（要登入）：說明、計分規則、注意事項、下載訓練影片和訓練程式、在 Colab 開啟
     static/         前端：純 HTML、JS、CSS
-      index.html    首頁＝委託頁：說明、計分規則、注意事項、下載訓練影片和訓練程式、在 Colab 開啟
       submit.html   學生貼課堂金鑰、選組、交件、看自己這組的路考紀錄
       teacher.html  管理頁：老師貼個人金鑰管理自己班級的組別、組員、正式路考，看路考紀錄
       playback.js   結果頁播放的計算（時間 ↔ 幀號、某一幀的判定、考官紀錄、分數），有 node 測試
@@ -65,6 +69,8 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 
 `ROAD_TEST_ROUTER`：`real`（預設）或 `fake`。本機開發設成 `fake` 就不用連 router，可以貼 `vcr_sk_dev_student`（56 班的學生）或 `vcr_sk_dev_teacher`（56 班的老師）。在 Fly 上設成 `fake` 時網站拒絕啟動。
 
+`VCR_OAUTH_CLIENT_ID`（預設 `road-test`）、`VCR_OAUTH_CLIENT_SECRET`、`ROAD_TEST_PUBLIC_URL`（預設 `https://lukao.vanscoding.com`，callback 是它加 `/auth/callback`，要跟 router 登記的一樣）：學生經 router 的 OAuth 登入。`ROAD_TEST_COOKIE_SECRET`：登入 cookie 的簽章密語。secret 都放 Fly secrets，不進 git。本機設 `ROAD_TEST_ROUTER=fake` 時按「登入」就直接登入成 56 班的學生。
+
 `VANS_SIGNALS_URL`、`VANS_SIGNALS_TOKEN`：網站的 ERROR 記錄（交件偵測失敗、請求裡沒想到的錯）送到 vans-signals，Slack 上 Source 是 `road-test`（Fly 上放 secrets）。兩個都設定才送，本機不用設定。送的時候不等、約 2 秒逾時、不重送，送失敗不影響使用者。見 `docs/adr/0002-errors-go-to-vans-signals.md`。
 
 ### 管理頁 `/teacher.html`
@@ -97,7 +103,7 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 $ROAD_TEST_DATA/
   videos/Seq05VD.mp4   正式路考，960×720，5101 幀
   videos/0006R0.mp4    模擬路考，960×720，3931 幀
-  videos/0016E5.mp4    訓練影片（委託頁 /downloads/0016E5.mp4，不用金鑰）。SAR 已改成 1:1，播放器裡是 4:3
+  videos/0016E5.mp4    訓練影片（委託頁 /downloads/0016E5.mp4，要登入）。SAR 已改成 1:1，播放器裡是 4:3
   answers/Seq05VD.json 正式路考的答案（171 個計分幀）
   answers/0006R0.json  模擬路考的答案（101 個計分幀）
   road_test_v2.db      網站產生：交件、排隊、偵測結果、成績、組別、組員、正式路考開關（SQLite）。改成依班級分組時重新開始，舊的 road_test.db 和 groups.json 不讀、可以刪掉
