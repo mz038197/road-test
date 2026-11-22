@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from conftest import CLASSROOM_KEY, bearer
+from conftest import CLASSROOM_KEY, as_student
 from road_test.web.signals import start_signal_forwarding
 
 
@@ -183,7 +183,7 @@ def test_an_unexpected_error_in_a_request_reaches_vans_signals(receiver, forward
 
     monkeypatch.setattr(app.state.store, "class_groups", broken)
     response = TestClient(app, raise_server_exceptions=False).get("/api/student?key=vcr_sk_secret",
-                                                                  headers=bearer(CLASSROOM_KEY))
+                                                                  headers=as_student(CLASSROOM_KEY))
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal server error"}
     _wait_until(lambda: receiver.posts)

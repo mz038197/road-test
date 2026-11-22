@@ -5,8 +5,9 @@ const STATUS_NAMES = {
   done: "全部完成", failed: "出錯了",
 };
 
-// router 的金鑰（課堂金鑰或個人金鑰，road-test ADR 0001）：只存在這個分頁（sessionStorage），關掉分頁就不見；
-// 不放 cookie、localStorage 或網址。api() 每個請求都帶 Authorization: Bearer。
+// 學生的身分在 HttpOnly cookie 裡，JavaScript 碰不到（road-test ADR 0003）。
+// 這裡的金鑰只剩管理頁的個人金鑰：只存在這個分頁（sessionStorage），關掉分頁就不見；
+// 不放 cookie、localStorage 或網址。有金鑰時 api() 每個請求都帶 Authorization: Bearer。
 const API_KEY = "road-test-api-key";
 
 function loadKey() {
@@ -26,12 +27,15 @@ function authHeaders() {
   return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
-// 呼叫 API；帶上 authHeaders()。失敗時丟出伺服器給的中文原因
+// 呼叫 API；帶上 authHeaders()。失敗時丟出伺服器給的中文原因。
+// 學生沒登入或登入失效時，伺服器在 401 帶 X-Login-Notice，這時回首頁顯示提示條
 async function api(path, options = {}) {
   const headers = { ...authHeaders(), ...(options.headers || {}) };
   const response = await fetch(path, { ...options, headers });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const notice = response.status === 401 && response.headers?.get("X-Login-Notice");
+    if (notice) location.replace(`/?notice=${encodeURIComponent(notice)}`);
     throw new Error(typeof body.detail === "string" ? body.detail : `伺服器回應 ${response.status}`);
   }
   return body;

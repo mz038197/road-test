@@ -1,5 +1,5 @@
 // 結果頁：result.html?id=N。每秒問一次進度；成績出來就開始播放（player.js）。
-// 身分標頭由 common.js 的 authHeaders() 決定，所以學生和老師（#10）用的是同一頁。
+// 學生的身分在 cookie，老師的個人金鑰由 common.js 的 authHeaders() 帶上，所以兩邊用的是同一頁。
 // 資料都經過 source。模擬路考有 CONF 滑桿：拖動時呼叫 /rescore 重算，拿到新結果就 player.setResult()。
 const id = new URLSearchParams(location.search).get("id");
 const source = {

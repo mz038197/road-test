@@ -12,7 +12,7 @@ import json
 import secrets
 from typing import Callable
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 
 from road_test.web.key_check import INVALID, Identity, Refusal
@@ -22,6 +22,7 @@ from road_test.web.router import Router
 CLASSROOM_COOKIE = "road_test_classroom"
 LOGIN_COOKIE = "road_test_login"
 LOGIN_SECONDS = 600
+NOTICE_HEADER = "X-Login-Notice"  # 學生 API 回 401 時帶首頁提示條的代碼，前端照著導回首頁
 
 NOTICES = {  # 首頁的提示條：網址只帶代碼，文字一律從這裡來，不把網址上的內容放進頁面
     "login_required": "請先登入。",
@@ -67,6 +68,21 @@ def classroom_identity(request: Request, router: Router) -> Identity | Refusal |
     who = router.check_key(key)
     if isinstance(who, Identity) and who.kind != "classroom":
         return INVALID  # 這張 cookie 只放課堂金鑰
+    return who
+
+
+def signed_in_student(request: Request, router: Router) -> Identity:
+    """學生 API 的身分：沒登入或金鑰失效回 401（失效時清 cookie），router 連不上回 503、不清 cookie。"""
+    who = classroom_identity(request, router)
+    if who is None:
+        raise HTTPException(401, NOTICES["login_required"], headers={NOTICE_HEADER: "login_required"})
+    if isinstance(who, Refusal):
+        if who.reason == "unavailable":
+            raise HTTPException(503, who.message)
+        cleared = Response()
+        clear_classroom_cookie(cleared)
+        raise HTTPException(401, NOTICES["expired"],
+                            headers={NOTICE_HEADER: "expired", "Set-Cookie": cleared.headers["set-cookie"]})
     return who
 
 
