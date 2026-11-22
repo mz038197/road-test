@@ -23,7 +23,8 @@ from pydantic import BaseModel, Field
 from road_test import paths
 from road_test.detector import CLASSES, Detector, ModelRejected
 from road_test.web.key_check import ClassRef, Identity, Refusal
-from road_test.web.login import NOTICES, classroom_identity, clear_classroom_cookie, go_home, login_routes
+from road_test.web.login import (CLASSROOM_COOKIE, NOTICES, classroom_identity, clear_classroom_cookie, go_home,
+                                 login_routes, signed_in_student)
 from road_test.web.router import Router
 from road_test.web.upload_limit import UploadLimit
 from road_test.web.results import score_result
@@ -160,10 +161,12 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             raise HTTPException(403, "你沒有可管理的班級")
         return who
 
-    def student(who: Identity = Depends(identity)) -> Identity:
-        """課堂金鑰才是學生：只能在自己的 class_id 裡選組、交件、看自己這組。"""
-        if who.kind != "classroom":
-            raise HTTPException(403, "個人金鑰不能交件，請貼上你的課堂 API Key。")
+    def student(request: Request) -> Identity:
+        """登入的學生（cookie 裡的課堂金鑰，ADR 0003）：只能在自己的 class_id 裡選組、交件、看自己這組。
+        顯示名稱每次驗金鑰時跟著 router 更新。"""
+        who = signed_in_student(request, router)
+        if who.display_name:
+            store.update_display_name(who.class_id, who.student_id, who.display_name)
         return who
 
     def class_state(class_id: int) -> dict:
@@ -179,7 +182,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         return {"class_id": who.class_id, "student_id": who.student_id,
                 "groups": [{"id": g["id"], "name": g["name"]} for g in groups],
                 "message": "" if groups else NOT_OPEN,
-                "member": member_view(row), **class_state(who.class_id),
+                "member": member_view(row), "teammates": teammates(row), **class_state(who.class_id),
                 "finals_left": member and store.finals_left(member)}
 
     def membership(who: Identity) -> tuple[sqlite3.Row | None, Member | None]:
@@ -190,6 +193,12 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def member_view(row) -> dict | None:
         return row and {"group_id": row["group_id"], "group_name": row["group_name"], "display_name": row["display_name"]}
 
+    def teammates(row) -> list[str]:
+        """自己這組全部組員的顯示名稱（含自己）；還沒選組是空的。"""
+        if row is None:
+            return []
+        return [m["display_name"] for m in store.members(row["class_id"]) if m["group_id"] == row["group_id"]]
+
     def joined_member(who: Identity) -> Member:
         _row, member = membership(who)
         if member is None:
@@ -199,18 +208,17 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     @app.get("/api/student/records")
     def student_records(who: Identity = Depends(student)):
         """自己這組的路考紀錄，新的在前面。"""
-        return [summary(r) for r in store.of_class_group(joined_member(who).group_id)]
+        return [{**summary(r), "display_name": r["display_name"]}
+                for r in store.of_class_group(joined_member(who).group_id)]
 
     class Join(BaseModel):
         group_id: int
-        display_name: str = Field(min_length=1, max_length=40)
 
     @app.post("/api/student/group", status_code=201)
     def join_group(body: Join, who: Identity = Depends(student)):
-        """第一次進來選組並填顯示名稱，之後鎖定；選錯由老師改。只能選自己班級的組。"""
-        name = body.display_name.strip()
-        if not name:
-            raise HTTPException(400, "請填顯示名稱，讓老師知道你是誰。")
+        """第一次進來選組，之後鎖定；選錯由老師改。只能選自己班級的組。顯示名稱是 router 給的，
+        還沒部署 display_name 的 router 不給名字時先用學生編號，之後驗金鑰時會更新。"""
+        name = who.display_name or f"學生 {who.student_id}"
         try:
             return member_view(store.join(who.class_id, who.student_id, body.group_id, name))
         except NoSuchGroup:
@@ -218,11 +226,19 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         except AlreadyMember:
             raise HTTPException(409, "你已經選過組別了，選錯請找老師改。") from None
 
-    def viewer(who: Identity = Depends(identity)) -> Viewer:
-        """課堂金鑰看自己選的組；個人金鑰看自己能管理的班級（管理頁播放任一組用）。"""
-        if who.kind == "classroom":
-            return Viewer(member=membership(who)[1])
-        return Viewer(classes=frozenset(c.id for c in who.classes))
+    def viewer(request: Request, authorization: str | None = Header(None)) -> Viewer:
+        """學生看 cookie 裡的課堂金鑰選的組；老師帶個人金鑰看自己能管理的班級（管理頁播放任一組用）。
+        Authorization 只認個人金鑰：分頁裡留著舊的課堂金鑰時，照樣走 cookie。"""
+        if authorization:
+            try:
+                who = identity(authorization)
+            except HTTPException:
+                if CLASSROOM_COOKIE not in request.cookies:
+                    raise
+                who = None
+            if who is not None and who.kind == "personal":
+                return Viewer(classes=frozenset(c.id for c in who.classes))
+        return Viewer(member=membership(student(request))[1])
 
     def visible(sid: int, who: Viewer):
         row = store.get(sid)
@@ -338,7 +354,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def video(sid: int, t: str = "", e: int = 0):
         """這次路考的影片，給結果頁的 <video> 播放（支援 Range，拖時間軸才順）。
 
-        <video> 不能帶 Authorization 標頭，所以權限放在網址的簽章 t 裡：看得到這次結果的人（自己這組、老師）
+        <video> 的權限放在網址的簽章 t 裡：看得到這次結果的人（自己這組、老師）
         才拿得到 video_url。網址 6 小時後失效（e 是到期時間）；簽章不對、過期一律 403，不透露有沒有這次路考。
         """
         row = store.get(sid)

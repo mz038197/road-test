@@ -19,12 +19,18 @@ function browser(answer = { status: 200, body: {} }) {
   globalThis.sessionStorage = fakeStorage();
   globalThis.localStorage = fakeStorage();
   globalThis.document = { cookie: "" };
+  const visited = [];
+  globalThis.location = { replace: url => visited.push(url) };
+  const answerHeaders = new Map(Object.entries(answer.headers || {}));
   globalThis.fetch = async (path, options = {}) => {
     requests.push({ path, headers: { ...(options.headers || {}) } });
-    return { ok: answer.status < 400, status: answer.status, json: async () => answer.body };
+    return {
+      ok: answer.status < 400, status: answer.status, json: async () => answer.body,
+      headers: { get: name => answerHeaders.get(name) ?? null },
+    };
   };
   delete require.cache[require.resolve("../../src/road_test/web/static/common.js")];
-  return { C: require("../../src/road_test/web/static/common.js"), requests };
+  return { C: require("../../src/road_test/web/static/common.js"), requests, visited };
 }
 
 const KEY = "vcr_sk_class0" + "c".repeat(40);
@@ -65,6 +71,34 @@ test("被拒時丟出 router 給的訊息", async () => {
   C.saveKey(KEY);
 
   await assert.rejects(C.api("/api/student"), { message: "無效的 API 金鑰" });
+});
+
+test("學生的登入失效時回首頁，帶伺服器給的提示代碼", async () => {
+  const { C, visited } = browser({
+    status: 401, body: { detail: "這堂課已經結束，或登入已失效，請重新登入" },
+    headers: { "X-Login-Notice": "expired" },
+  });
+
+  await assert.rejects(C.api("/api/student"));
+
+  assert.deepEqual(visited, ["/?notice=expired"]);
+});
+
+test("老師的金鑰被拒時留在原頁，不導回首頁", async () => {
+  const { C, visited } = browser({ status: 401, body: { detail: "無效的 API 金鑰" } });
+  C.saveKey(KEY);
+
+  await assert.rejects(C.api("/api/teacher/classes"));
+
+  assert.deepEqual(visited, []);
+});
+
+test("router 連不上時留在原頁", async () => {
+  const { C, visited } = browser({ status: 503, body: { detail: "驗證服務暫時無法使用，請稍後再試" } });
+
+  await assert.rejects(C.api("/api/student"), { message: "驗證服務暫時無法使用，請稍後再試" });
+
+  assert.deepEqual(visited, []);
 });
 
 test("只帶金鑰，不帶舊的老師密碼或組別代碼標頭", async () => {

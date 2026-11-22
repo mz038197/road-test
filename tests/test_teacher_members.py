@@ -3,8 +3,8 @@
 身分來自注入的 Key Check 用戶端，背後是回答 router 合約範例檔的假 router（見 conftest）：
 TEACHER_KEY 管 56、57 班；CLASSROOM_KEY、CLASSMATE_KEY 是 56 班的學生 1234、1235；OTHER_CLASS_KEY 是 57 班的學生。
 """
-from conftest import (ADMIN_KEY, CLASSMATE_KEY, CLASSROOM_KEY, NO_CLASS_KEY, OTHER_CLASS_KEY, TEACHER_KEY, bearer,
-                      run_queue)
+from conftest import (ADMIN_KEY, CLASSMATE_KEY, CLASSROOM_KEY, NO_CLASS_KEY, OTHER_CLASS_KEY, TEACHER_KEY, as_student,
+                      bearer, run_queue)
 from test_student_groups import add_group, hand_in, join, records
 
 
@@ -17,8 +17,8 @@ def class_view(client, class_id: int = 56, key: str = TEACHER_KEY) -> dict:
 def test_the_teacher_sees_the_members_of_each_group_by_display_name(open_site) -> None:
     client = open_site()
     first, second = add_group(client, 56, "第 1 組"), add_group(client, 56, "第 2 組")
-    join(client, first, "小明")
-    join(client, second, "小華", key=CLASSMATE_KEY)
+    join(client, first)
+    join(client, second, key=CLASSMATE_KEY)
 
     groups = class_view(open_site())["groups"]  # 重開機之後還在
 
@@ -34,9 +34,9 @@ def class_records(client, class_id: int = 56, key: str = TEACHER_KEY):
 
 def test_the_teacher_sees_which_member_handed_in_each_record_of_the_class(client) -> None:
     first, second = add_group(client, 56, "第 1 組"), add_group(client, 56, "第 2 組")
-    join(client, first, "小明")
-    join(client, second, "小華", key=CLASSMATE_KEY)
-    join(client, add_group(client, 57, "第 1 組"), "別班的", key=OTHER_CLASS_KEY)
+    join(client, first)
+    join(client, second, key=CLASSMATE_KEY)
+    join(client, add_group(client, 57, "第 1 組"), key=OTHER_CLASS_KEY)
     mine = hand_in(client).json()["id"]
     theirs = hand_in(client, CLASSMATE_KEY).json()["id"]
     hand_in(client, OTHER_CLASS_KEY)
@@ -67,8 +67,8 @@ def move(client, student_id: int, group_id: int, class_id: int = 56, key: str = 
 
 def test_the_teacher_moves_a_student_who_picked_the_wrong_group(client) -> None:
     wrong, right = add_group(client, 56, "第 1 組"), add_group(client, 56, "第 2 組")
-    join(client, wrong, "小明")
-    join(client, right, "小華", key=CLASSMATE_KEY)
+    join(client, wrong)
+    join(client, right, key=CLASSMATE_KEY)
     earlier = hand_in(client).json()["id"]
     run_queue(client)
 
@@ -76,35 +76,35 @@ def test_the_teacher_moves_a_student_who_picked_the_wrong_group(client) -> None:
 
     assert moved.status_code == 200
     assert moved.json() == {"student_id": 1234, "group_id": right, "group_name": "第 2 組", "display_name": "小明"}
-    assert client.get("/api/student", headers=bearer(CLASSROOM_KEY)).json()["member"]["group_id"] == right
+    assert client.get("/api/student", headers=as_student(CLASSROOM_KEY)).json()["member"]["group_id"] == right
     assert [g["members"] for g in class_view(client)["groups"]] == [
         [], [{"student_id": 1234, "display_name": "小明"}, {"student_id": 1235, "display_name": "小華"}]]
     later = hand_in(client).json()["id"]
     run_queue(client)
     assert [r["id"] for r in records(client, CLASSMATE_KEY)] == [later], "之後交的算新的組"
-    assert client.get(f"/api/submissions/{earlier}", headers=bearer(CLASSROOM_KEY)).status_code == 404, \
+    assert client.get(f"/api/submissions/{earlier}", headers=as_student(CLASSROOM_KEY)).status_code == 404, \
         "之前交的還是原本那組的"
 
 
 def test_a_student_can_only_be_moved_within_their_class(client) -> None:
     mine = add_group(client, 56, "第 1 組")
     other_class = add_group(client, 57, "第 1 組")
-    join(client, mine, "小明")
-    join(client, other_class, "別班的", key=OTHER_CLASS_KEY)
+    join(client, mine)
+    join(client, other_class, key=OTHER_CLASS_KEY)
 
     assert move(client, 1234, other_class).status_code == 404, "不能改到別班的組"
     assert move(client, 2001, mine).status_code == 404, "56 班沒有這個學生"
     assert move(client, 1235, mine).status_code == 404, "還沒選組的學生不能改"
     assert move(client, 1234, mine, class_id=58).status_code == 404, "不是自己的班級"
     assert move(client, 1234, mine, key=CLASSROOM_KEY).status_code == 403, "學生不能自己換組"
-    assert client.get("/api/student", headers=bearer(CLASSROOM_KEY)).json()["member"]["group_id"] == mine
+    assert client.get("/api/student", headers=as_student(CLASSROOM_KEY)).json()["member"]["group_id"] == mine
 
 
 def test_the_teacher_plays_back_any_groups_result_in_their_class(client, data_dir) -> None:
     (data_dir / "videos").mkdir()
     (data_dir / "videos" / "Mini.mp4").write_bytes(b"mini video")
-    join(client, add_group(client, 56, "第 1 組"), "小明")
-    join(client, add_group(client, 56, "第 2 組"), "小華", key=CLASSMATE_KEY)
+    join(client, add_group(client, 56, "第 1 組"))
+    join(client, add_group(client, 56, "第 2 組"), key=CLASSMATE_KEY)
     sids = [hand_in(client).json()["id"], hand_in(client, CLASSMATE_KEY).json()["id"]]
     run_queue(client)
 

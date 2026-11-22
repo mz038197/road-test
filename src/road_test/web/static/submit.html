@@ -15,13 +15,10 @@
     <p id="final-banner" class="banner" hidden>正式路考開放中。</p>
   </header>
 
-  <form id="login" class="card">
-    <label for="api-key">課堂 API Key</label>
-    <p class="muted">貼上 VS Code 擴充裡的課堂 API Key（<code>vcr_sk_</code> 開頭）。金鑰只存在這個分頁，關掉分頁就要重貼。</p>
-    <input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="vcr_sk_…" required>
-    <button type="submit">進入</button>
-    <p id="login-error" class="error" role="alert"></p>
-  </form>
+  <section class="card" id="problem" hidden>
+    <p id="problem-text" class="error" role="alert"></p>
+    <button type="button" id="retry">再試一次</button>
+  </section>
 
   <section class="card" id="not-open" hidden>
     <h2>這一班還沒開放路考</h2>
@@ -30,11 +27,9 @@
 
   <form id="join" class="card" hidden>
     <h2>選組別</h2>
-    <p class="muted">第一次進來要選你們這組，並填一個老師認得出來的顯示名稱。選了就鎖定，選錯請找老師改。</p>
+    <p class="muted">第一次進來要選你們這組。選了就鎖定，選錯請找老師改。</p>
     <label for="join-group">組別</label>
     <select id="join-group" required></select>
-    <label for="display-name">顯示名稱</label>
-    <input id="display-name" type="text" maxlength="40" autocomplete="off" placeholder="例如：王小明" required>
     <button type="submit">選定組別</button>
     <p id="join-error" class="error" role="alert"></p>
   </form>
@@ -72,7 +67,7 @@
           <div class="step-body">
             <h2>組別</h2>
             <p><span id="me"></span>　<span class="muted" id="finals-left"></span></p>
-            <p class="muted">組別選了就鎖定，選錯請找老師改。<button type="button" id="logout" class="secondary small">換一把金鑰</button></p>
+            <p class="muted">組別選了就鎖定，選錯請找老師改。</p>
           </div>
         </section>
 
@@ -118,7 +113,7 @@
           <p class="muted" id="final-empty">還沒交正式路考。</p>
           <div class="table-wrap">
             <table id="records-final">
-              <thead><tr><th>上傳時間</th><th>檔名</th><th class="num">CONF（鎖定）</th><th>狀態</th><th class="num">成績</th></tr></thead>
+              <thead><tr><th>上傳時間</th><th>交件人</th><th>檔名</th><th class="num">CONF（鎖定）</th><th>狀態</th><th class="num">成績</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -126,7 +121,7 @@
           <p class="muted" id="mock-empty">還沒交模擬路考。</p>
           <div class="table-wrap">
             <table id="records-mock">
-              <thead><tr><th>上傳時間</th><th>檔名</th><th class="num">CONF</th><th>狀態</th><th class="num">成績</th></tr></thead>
+              <thead><tr><th>上傳時間</th><th>交件人</th><th>檔名</th><th class="num">CONF</th><th>狀態</th><th class="num">成績</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>

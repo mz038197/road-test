@@ -9,7 +9,7 @@ def test_a_student_cannot_open_the_final(client) -> None:
     submit(client, group="01")
     response = client.put("/api/teacher/classes/56/final", json={"open": True}, headers=as_group("01"))
 
-    assert response.status_code == 403, "課堂金鑰不能開關正式路考"
+    assert response.status_code == 401, "學生的 cookie 不能開關正式路考"
     assert client.get("/api/student", headers=as_group("01")).json()["final_open"] is False
 
 

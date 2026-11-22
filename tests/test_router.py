@@ -10,7 +10,7 @@ from road_test.web.app import RoadTest, create_app
 from road_test.web.key_check import Refusal
 from road_test.web.router import DEV_STUDENT_KEY, DEV_TEACHER_KEY, FakeRouter, router_from_env
 
-from conftest import FRAME_COUNT, FakeDetector, bearer, contract
+from conftest import FRAME_COUNT, FakeDetector, as_student, contract
 
 KEY = "vcr_sk_" + "a1b2c3d4" * 6
 ON_FLY = {"FLY_APP_NAME": "road-test"}
@@ -25,22 +25,22 @@ def site(data_dir, router) -> TestClient:
 
 def test_a_student_gets_in_through_the_router_passed_to_create_app(data_dir) -> None:
     with site(data_dir, FakeRouter({KEY: contract("classroom-accepted")})) as client:
-        response = client.get("/api/student", headers=bearer(KEY))
+        response = client.get("/api/student", headers=as_student(KEY))
 
     assert response.status_code == 200, response.text
     assert (response.json()["class_id"], response.json()["student_id"]) == (56, 1234)
 
 
-def test_a_key_the_router_does_not_know_is_refused_with_its_message(data_dir) -> None:
+def test_a_key_the_router_does_not_know_is_refused(data_dir) -> None:
     with site(data_dir, FakeRouter({})) as client:
-        response = client.get("/api/student", headers=bearer(KEY))
+        response = client.get("/api/student", headers=as_student(KEY))
 
-    assert (response.status_code, response.json()["detail"]) == (401, "無效的 API 金鑰")
+    assert (response.status_code, response.json()["detail"]) == (401, "這堂課已經結束，或登入已失效，請重新登入")
 
 
 def test_when_the_router_is_down_the_site_says_the_check_is_unavailable(data_dir) -> None:
     with site(data_dir, FakeRouter({}, down={KEY})) as client:
-        response = client.get("/api/student", headers=bearer(KEY))
+        response = client.get("/api/student", headers=as_student(KEY))
 
     assert (response.status_code, response.json()["detail"]) == (503, "驗證服務暫時無法使用，請稍後再試")
 
