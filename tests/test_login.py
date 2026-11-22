@@ -1,4 +1,5 @@
 """學生從首頁登入：用假的 router 跑完登入到下載，只看 HTTP、狀態碼、cookie 和導向。"""
+import re
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -71,7 +72,7 @@ def test_the_home_page_only_offers_login_when_signed_out(site) -> None:
     assert "路考網站" in page.text and "登入" in page.text and 'href="/auth/student/login"' in page.text
     for teacher_way_in in ("/admin", "teacher.html", "進入後台", "老師登入"):
         assert teacher_way_in not in page.text
-    assert "<script" not in page.text, "首頁不需要 script，CSP 也不准 inline script"
+    assert not re.search(r"<script(?![^>]*\bsrc=)", page.text), "CSP 不准 inline script"
 
 
 def test_signing_in_stores_the_classroom_key_in_a_locked_down_cookie_and_opens_the_brief(site) -> None:

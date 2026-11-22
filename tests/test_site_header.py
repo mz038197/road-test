@@ -1,0 +1,122 @@
+"""全站共用標題列的伺服器這一半：誰登入了、首頁帶他去哪裡、每一頁都有標題列（#6）。"""
+import re
+
+import pytest
+
+from road_test.web.oauth import TeacherGrant
+from road_test.web.router import FakeRouter
+
+from conftest import CLASSROOM_KEY, DOWN_KEY, as_student, router_answers, teacher_contract
+
+PAGES = ["/", "/brief", "/submit.html", "/result.html", "/admin"]
+
+
+@pytest.fixture
+def site(open_site, data_dir):
+    (data_dir / "videos").mkdir()
+    return open_site(router=FakeRouter(router_answers(), down={DOWN_KEY}, login_as=CLASSROOM_KEY,
+                                       teacher_login_as=TeacherGrant(42, "陳老師"),
+                                       teachers={42: teacher_contract("accepted")}))
+
+
+def sign_in_student(site) -> None:
+    assert site.get("/auth/student/login").url.path == "/brief"
+
+
+def sign_in_teacher(site) -> None:
+    assert site.get("/admin").url.path == "/admin"
+
+
+def test_signed_out_the_header_has_no_identity(site) -> None:
+    response = site.get("/api/me")
+
+    assert response.status_code == 200
+    assert response.json() == {"role": None}
+
+
+def test_a_student_without_a_group_is_shown_by_display_name(site) -> None:
+    sign_in_student(site)
+
+    assert site.get("/api/me").json() == {"role": "student", "display_name": "小明", "group_name": None}
+
+
+def test_a_student_in_a_group_sees_the_group_name(site) -> None:
+    sign_in_student(site)
+    group = site.app.state.store.add_class_group(56, "第 3 組", 1)
+    assert site.post("/api/student/group", json={"group_id": group["id"]}).status_code == 201
+
+    assert site.get("/api/me").json() == {"role": "student", "display_name": "小明", "group_name": "第 3 組"}
+
+
+def test_a_teacher_is_shown_by_display_name(site) -> None:
+    sign_in_teacher(site)
+
+    assert site.get("/api/me").json() == {"role": "teacher", "display_name": "陳老師"}
+
+
+def test_a_teacher_demonstrating_as_a_student_is_still_shown_as_the_teacher(site) -> None:
+    sign_in_teacher(site)
+    sign_in_student(site)
+
+    assert site.get("/api/me").json()["role"] == "teacher"
+
+
+def test_who_is_signed_in_is_never_cached_and_never_contains_the_key(site) -> None:
+    sign_in_student(site)
+
+    response = site.get("/api/me")
+
+    assert response.headers["cache-control"] == "no-store"
+    assert CLASSROOM_KEY not in response.text
+
+
+def test_when_the_router_is_down_the_header_is_empty_and_the_cookie_stays(site) -> None:
+    response = site.get("/api/me", headers=as_student(DOWN_KEY))
+
+    assert response.status_code == 200 and response.json() == {"role": None}
+    assert "set-cookie" not in response.headers
+
+
+def test_a_signed_in_teacher_sees_the_way_into_the_back_office_on_the_home_page(site) -> None:
+    sign_in_teacher(site)
+
+    page = site.get("/").text
+
+    assert "進入後台" in page and 'href="/admin"' in page
+    assert "進入路考" not in page and "/auth/student/login" not in page
+
+
+def test_a_signed_in_student_has_no_teacher_entry_on_the_home_page(site) -> None:
+    sign_in_student(site)
+
+    page = site.get("/").text
+
+    assert "進入路考" in page
+    assert "進入後台" not in page and "/admin" not in page
+
+
+@pytest.mark.parametrize("path", PAGES)
+def test_every_page_has_the_shared_header(site, path: str) -> None:
+    sign_in_teacher(site)
+
+    page = site.get(path).text
+
+    assert re.search(r'<header class="site-header">.*?<a class="brand" href="/">.*?<img[^>]+src="/logo\.svg"'
+                     r'.*?路考網站.*?id="site-actions"', page, re.S), f"{path} 要有共用標題列"
+    assert page.index('src="common.js"') < page.index('src="header.js"'), f"{path} 要先載入 common.js"
+    assert not re.search(r"<script(?![^>]*\bsrc=)", page), "CSP 不准 inline script"
+
+
+def test_the_logo_is_served(site) -> None:
+    response = site.get("/logo.svg")
+
+    assert response.status_code == 200 and "svg" in response.headers["content-type"]
+
+
+def test_the_brief_tells_students_about_login_and_not_about_pasting_a_key(site) -> None:
+    sign_in_student(site)
+
+    page = site.get("/brief").text
+
+    assert "API Key" not in page and "貼上" not in page and "填顯示名稱" not in page
+    assert "課堂金鑰" not in page, "學生不必看到或貼上課堂金鑰"

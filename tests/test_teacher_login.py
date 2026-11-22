@@ -223,13 +223,13 @@ def test_when_the_router_is_down_the_teacher_stays_signed_in(site, fake) -> None
     assert not set_cookie(response, "road_test_teacher")
 
 
-def test_the_back_office_has_no_key_form_and_offers_sign_out(site) -> None:
+def test_the_back_office_has_no_key_form_and_carries_the_header_with_sign_out(site) -> None:
     sign_in(site)
 
     page = site.get("/admin").text
 
     assert "API Key" not in page and 'type="password"' not in page
-    assert 'action="/auth/logout"' in page
+    assert 'id="site-actions"' in page and 'src="header.js"' in page, "登出在共用標題列（tests/js/header.test.js）"
     assert "<script>" not in page, "CSP 不准 inline script"
 
 

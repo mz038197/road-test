@@ -40,8 +40,8 @@ log = logging.getLogger(__name__)
 STATIC = Path(__file__).parent / "static"
 PAGES = Path(__file__).parent / "pages"  # 要經過後端的頁面（首頁、委託頁），不放 static，才不會繞過登入
 SIGNED_OUT_ACTIONS = '<p><a class="button" href="/auth/student/login">登入</a></p>'
-SIGNED_IN_ACTIONS = ('<p><a class="button" href="/brief">進入路考</a></p>'
-                     '<form method="post" action="/auth/logout"><button class="secondary">登出</button></form>')
+STUDENT_ACTIONS = '<p><a class="button" href="/brief">進入路考</a></p>'
+TEACHER_ACTIONS = '<p><a class="button" href="/admin">進入後台</a></p>'  # 只有老師 cookie 有效時才放進頁面
 KIND_NAMES = {"mock": "模擬路考", "final": "正式路考"}
 TRAINING_VIDEO = "0016E5"  # 訓練影片，在路考資料夾的 videos/ 裡；不會出現在路考裡
 VIDEO_URL_HOURS = 6  # 路考影片網址幾小時後失效（結果頁每次拿成績都會拿到新的網址）
@@ -182,6 +182,20 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         is_open = store.class_final_open(class_id)
         return {"final_open": is_open, "kinds": [
             {"kind": k, "name": KIND_NAMES[k], "open": (k == "final") == is_open} for k in road_tests]}
+
+    @app.get("/api/me")
+    def who_am_i(request: Request, response: Response):
+        """標題列要顯示的身分。沒登入、金鑰失效或 router 連不上都只是「不顯示身分」：不回 401、不清 cookie。"""
+        response.headers["Cache-Control"] = "no-store"
+        session = teacher_cookie.read(request)
+        if session is not None:
+            return {"role": "teacher", "display_name": session.display_name}
+        who = classroom_identity(request, router)
+        if not isinstance(who, Identity):
+            return {"role": None}
+        row = store.member(who.class_id, who.student_id)
+        name = who.display_name or (row["display_name"] if row else f"學生 {who.student_id}")
+        return {"role": "student", "display_name": name, "group_name": row["group_name"] if row else None}
 
     @app.get("/api/student")
     def student_state(who: Identity = Depends(student)):
@@ -389,12 +403,18 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request, notice: str = ""):
-        """首頁：沒登入只有網站名稱、說明和「登入」；提示條的文字只從 NOTICES 來。"""
-        signed_in = isinstance(classroom_identity(request, router), Identity)
+        """首頁：沒登入只有網站名稱、說明和「登入」；學生看到「進入路考」，老師看到「進入後台」。
+        提示條的文字只從 NOTICES 來。"""
+        if teacher_cookie.read(request) is not None:
+            actions = TEACHER_ACTIONS
+        elif isinstance(classroom_identity(request, router), Identity):
+            actions = STUDENT_ACTIONS
+        else:
+            actions = SIGNED_OUT_ACTIONS
         message = NOTICES.get(notice)
         html = (PAGES / "home.html").read_text(encoding="utf-8")
         html = html.replace("<!--notice-->", f'<p class="error" role="alert">{message}</p>' if message else "")
-        html = html.replace("<!--actions-->", SIGNED_IN_ACTIONS if signed_in else SIGNED_OUT_ACTIONS)
+        html = html.replace("<!--actions-->", actions)
         return HTMLResponse(html, headers={"Cache-Control": "no-cache", "Vary": "Cookie"})
 
     @app.get("/index.html", include_in_schema=False)

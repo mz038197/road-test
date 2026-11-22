@@ -87,6 +87,12 @@ code { font: 500 var(--code-size) var(--mono); background: var(--surface); borde
            margin: 0 0 var(--s-8); }
 .back { display: inline-block; font-size: var(--fs-14); font-weight: 600; margin-bottom: var(--s-8); }
 .page-head { margin-bottom: var(--s-24); }
+/* 全站標題列：這裡只排版，視覺樣式在 #7 */
+.site-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+               gap: var(--s-8) var(--s-16); padding: var(--s-8) var(--s-16); border-bottom: 1px solid var(--line); }
+.site-header .brand { display: inline-flex; align-items: center; gap: var(--s-8); font-weight: 700; }
+#site-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-8) var(--s-12); }
+#site-actions form { margin: 0; }
 
 /* ---- 方塊 ---- */
 .card { background: var(--tile); border: var(--rule) solid var(--line); border-radius: var(--radius); padding: var(--s-24);
