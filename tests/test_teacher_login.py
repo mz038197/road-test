@@ -170,6 +170,18 @@ def test_a_login_cookie_cannot_be_used_as_a_teacher_cookie(data_dir, fake, clock
     assert response.status_code == 401
 
 
+def test_a_teacher_cookie_cannot_finish_a_login(site) -> None:
+    sign_in(site)
+    teacher = site.cookies["road_test_teacher"]
+    back = urlsplit(site.get("/auth/teacher/login").headers["location"])
+    site.cookies.clear()
+
+    response = site.get(f"/auth/callback?{back.query}", headers={"Cookie": f"road_test_login={teacher}"})
+
+    assert parse_qs(urlsplit(response.headers["location"]).query)["notice"] == ["login_failed"]
+    assert not set_cookie(response, "road_test_teacher")
+
+
 def test_a_failed_teacher_login_returns_home_without_a_cookie(site, fake) -> None:
     fake.login_down = True
 
@@ -390,10 +402,14 @@ def test_a_personal_key_no_longer_opens_a_result(data_dir, fake, clock, site) ->
     assert site.get(f"/api/submissions/{sid}", headers=bearer(TEACHER_KEY)).status_code == 401
 
 
-def test_production_refuses_to_start_without_the_signing_secret(monkeypatch) -> None:
+@pytest.mark.parametrize("value", [None, "   "])
+def test_production_refuses_to_start_without_the_signing_secret(monkeypatch, value) -> None:
     monkeypatch.setenv("FLY_APP_NAME", "road-test")
     monkeypatch.setenv("ROAD_TEST_ROUTER", "real")
-    monkeypatch.setenv("ROAD_TEST_TEACHER_COOKIE_SECRET", "   ")
+    if value is None:
+        monkeypatch.delenv("ROAD_TEST_TEACHER_COOKIE_SECRET", raising=False)
+    else:
+        monkeypatch.setenv("ROAD_TEST_TEACHER_COOKIE_SECRET", value)
 
     with pytest.raises(SystemExit) as e:
         main.build_app(main.settings.from_env({}, 2))
