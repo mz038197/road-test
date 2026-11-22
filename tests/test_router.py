@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from road_test.web import main
 from road_test.web.app import RoadTest, create_app
 from road_test.web.key_check import Refusal
-from road_test.web.router import DEV_STUDENT_KEY, DEV_TEACHER_KEY, FakeRouter, router_from_env
+from road_test.web.router import DEV_STUDENT_KEY, DEV_TEACHER, FakeRouter, router_from_env
 
 from conftest import FRAME_COUNT, FakeDetector, as_student, contract
 
@@ -66,10 +66,10 @@ def test_the_real_router_is_the_default_and_answers_through_key_check() -> None:
 def test_local_development_can_use_the_fake_router_with_a_student_and_a_teacher() -> None:
     router = router_from_env({"ROAD_TEST_ROUTER": "fake"})
 
-    student, teacher = router.check_key(DEV_STUDENT_KEY), router.check_key(DEV_TEACHER_KEY)
+    student, classes = router.check_key(DEV_STUDENT_KEY), router.teacher_classes(DEV_TEACHER.user_id)
 
-    assert (student.kind, student.class_id) == ("classroom", 56)
-    assert teacher.is_teacher
+    assert (student.student_id, student.class_id) == (1234, 56)
+    assert [c.id for c in classes.classes] == [56]
     assert isinstance(router.check_key(KEY), Refusal), "假的 router 不認得的金鑰一樣被拒"
 
 

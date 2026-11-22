@@ -18,7 +18,8 @@ This is a single-context repo:
 ├── GLOSSARY.md
 ├── docs/adr/
 │   ├── 0001-identity-comes-from-router-keys.md
-│   └── 0002-errors-go-to-vans-signals.md
+│   ├── 0002-errors-go-to-vans-signals.md
+│   └── 0003-login-through-router-oauth.md
 └── src/
 ```
 

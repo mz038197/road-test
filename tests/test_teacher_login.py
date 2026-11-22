@@ -271,7 +271,9 @@ def test_only_a_teacher_is_offered_the_back_office_from_a_result(data_dir, fake,
     with open_site(data_dir, fake, clock) as student:
         assert student.get(f"/api/submissions/{sid}",
                            headers=as_student(CLASSROOM_KEY)).json()["can_manage"] is False
-        page = student.get("/result.html").text
+        response = student.get("/result.html", headers=as_student(CLASSROOM_KEY))
+        assert response.status_code == 200
+        page = response.text
     assert "管理頁" not in page and "teacher.html" not in page and "/admin" not in page, "學生看不到後台的入口"
 
 

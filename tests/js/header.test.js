@@ -19,13 +19,13 @@ function walk(element) {
   return [element, ...element.children.flatMap(walk)];
 }
 
-function show(me) {
+function show(me, onHome = false) {
   globalThis.document = { createElement: fakeElement };
   const file = require.resolve("../../src/road_test/web/static/header.js");
   delete require.cache[file];
   const { renderSiteHeader } = require(file);
   const actions = fakeElement("nav");
-  renderSiteHeader(actions, me);
+  renderSiteHeader(actions, me, onHome);
   const all = walk(actions);
   return {
     texts: all.filter(e => e.text).map(e => e.text),
@@ -55,6 +55,28 @@ test("老師：顯示名稱、委託、後台和登出", () => {
   assert.deepEqual(texts, ["陳老師", "委託", "後台", "登出"]);
   assert.deepEqual(links, [["委託", "/brief"], ["後台", "/admin"]]);
   assert.equal(logout.action, "/auth/logout");
+});
+
+test("老師在首頁：右上角是「進入後台」", () => {
+  const { texts, links } = show({ role: "teacher", display_name: "陳老師" }, true);
+
+  assert.deepEqual(texts, ["陳老師", "委託", "進入後台", "登出"]);
+  assert.deepEqual(links, [["委託", "/brief"], ["進入後台", "/admin"]]);
+});
+
+test("學生在首頁：沒有後台入口", () => {
+  const { texts, links } = show({ role: "student", display_name: "小明", group_name: null }, true);
+
+  assert.deepEqual(texts, ["小明", "登出"]);
+  assert.deepEqual(links, []);
+});
+
+test("router 故障：顯示原因，不顯示登入或身分", () => {
+  const { texts, links, logout } = show({ role: null, message: "驗證服務暫時無法使用，請稍後再試" });
+
+  assert.deepEqual(texts, ["驗證服務暫時無法使用，請稍後再試"]);
+  assert.deepEqual(links, []);
+  assert.equal(logout, undefined);
 });
 
 test("沒登入：不顯示身分，也沒有老師入口", () => {

@@ -11,12 +11,12 @@ import logging
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from urllib.parse import urlencode
+from urllib.parse import quote_plus, urlencode
 
 import httpx
 import jwt
 
-from road_test.web.key_check import DEFAULT_URL, TIMEOUT_SECONDS
+from road_test.web.key_check import DEFAULT_URL, TIMEOUT_SECONDS, UNAVAILABLE_REASON
 
 DEFAULT_CLIENT_ID = "road-test"
 DEFAULT_PUBLIC_URL = "https://lukao.vanscoding.com"
@@ -40,7 +40,7 @@ class ClassroomGrant:
 
 @dataclass(frozen=True)
 class LoginFailure:
-    reason: str  # "refused"（router 不收這個授權碼）或 "unavailable"（router 連不上或回應不對）
+    reason: str  # "refused"（router 不收這個授權碼）或 UNAVAILABLE_REASON（router 連不上或回應不對）
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ class TeacherGrant:
 
 
 REFUSED = LoginFailure("refused")
-UNAVAILABLE_LOGIN = LoginFailure("unavailable")
+UNAVAILABLE_LOGIN = LoginFailure(UNAVAILABLE_REASON)
 
 
 def _bad_token(why: str) -> LoginFailure:
@@ -79,22 +79,24 @@ class OAuthClient:
                    setting("VCR_OAUTH_CLIENT_SECRET"), setting("ROAD_TEST_PUBLIC_URL", DEFAULT_PUBLIC_URL),
                    transport=transport)
 
-    def student_login_url(self, state: str, code_challenge: str) -> str:
-        query = urlencode({"response_type": "code", "client_id": self._client_id, "scope": "classroom",
+    def _login_url(self, scope: str, state: str, code_challenge: str) -> str:
+        query = urlencode({"response_type": "code", "client_id": self._client_id, "scope": scope,
                            "redirect_uri": self._redirect_uri, "state": state,
                            "code_challenge": code_challenge, "code_challenge_method": "S256"})
         return f"{self._router_url}/oauth/authorize?{query}"
 
+    def student_login_url(self, state: str, code_challenge: str) -> str:
+        return self._login_url("classroom", state, code_challenge)
+
     def teacher_login_url(self, state: str, code_challenge: str) -> str:
-        query = urlencode({"response_type": "code", "client_id": self._client_id, "scope": "openid teacher",
-                           "redirect_uri": self._redirect_uri, "state": state,
-                           "code_challenge": code_challenge, "code_challenge_method": "S256"})
-        return f"{self._router_url}/oauth/authorize?{query}"
+        return self._login_url("openid teacher", state, code_challenge)
 
     def _redeem(self, code: str, code_verifier: str) -> httpx.Response | LoginFailure:
         try:
             response = self._http.post(
-                f"{self._router_url}/oauth/token", auth=(self._client_id, self._client_secret),
+                f"{self._router_url}/oauth/token",
+                # RFC 6749 §2.3.1：id 和 secret 先表單編碼再放進 Basic，router 會用 unquote_plus 解回來
+                auth=(quote_plus(self._client_id), quote_plus(self._client_secret)),
                 data={"grant_type": "authorization_code", "code": code, "code_verifier": code_verifier,
                       "redirect_uri": self._redirect_uri})
         except httpx.HTTPError as e:
