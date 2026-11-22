@@ -6,25 +6,14 @@ let classId = null;
 let groups = [];
 let records = [];
 
-// 舊版管理頁可能在這個分頁留下個人金鑰：清掉，不再帶著它
-try { sessionStorage.removeItem("road-test-api-key"); } catch { /* 讀不到就沒有 */ }
-
 function say(text) {
   $("notice").textContent = text;
   $("error").textContent = "";
 }
 
-// 老師 cookie 到期（12 小時）時回 /admin，由它轉去重新登入
-async function backToLoginIfExpired() {
-  try {
-    if ((await fetch("/api/teacher/classes")).status === 401) location.assign("/admin");
-  } catch { /* 連不上就留在原頁，錯誤訊息已經顯示 */ }
-}
-
 function fail(e) {
   $("notice").textContent = "";
   $("error").textContent = e.message;
-  backToLoginIfExpired();
 }
 
 function send(path, body, method = "POST") {
@@ -37,8 +26,7 @@ async function start() {
   try {
     mine = await api("/api/teacher/classes");
   } catch (e) {
-    $("load-error").textContent = e.message;
-    backToLoginIfExpired();
+    $("load-error").textContent = e.message;  // 登入失效時 api() 已經帶回首頁
     return;
   }
   $("admin").hidden = false;

@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from conftest import ADMIN_KEY, CLASSROOM_KEY, DOWN_KEY, NO_CLASS_KEY, TEACHER_KEY, bearer, signed_in
+from conftest import ADMIN_KEY, CLASSROOM_KEY, DOWN_KEY, NO_CLASS_KEY, TEACHER_KEY, as_student, bearer, signed_in
 
 
 def test_without_a_teacher_cookie_the_teacher_api_is_refused(client) -> None:
@@ -124,7 +124,7 @@ def test_the_key_never_shows_up_in_responses_or_logs(client, caplog) -> None:
     caplog.set_level(logging.DEBUG)
     bodies = [client.get("/api/teacher/classes", headers=bearer(key)).text
               for key in (TEACHER_KEY, NO_CLASS_KEY, CLASSROOM_KEY, DOWN_KEY, "vcr_sk_" + "x" * 48)]
-    bodies += [client.get("/api/student", headers=bearer(key)).text for key in (CLASSROOM_KEY, DOWN_KEY)]
+    bodies += [client.get("/api/student", headers=as_student(key)).text for key in (CLASSROOM_KEY, DOWN_KEY)]
     bodies.append(add_group(client, 56, "第 1 組").text)
 
     logged = "\n".join(r.getMessage() for r in caplog.records)

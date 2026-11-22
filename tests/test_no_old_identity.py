@@ -11,7 +11,7 @@ def test_a_hand_in_without_a_key_is_refused_even_with_a_group_code(client) -> No
                            files={"model": ("best.onnx", model(), "application/octet-stream")}, headers=OLD_HEADERS)
 
     assert response.status_code == 401
-    assert "API Key" in response.json()["detail"]
+    assert "登入" in response.json()["detail"]
 
 
 @pytest.mark.parametrize("method, path", [

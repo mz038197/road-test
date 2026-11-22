@@ -25,7 +25,7 @@ src/road_test/      Python 套件，網站和老師工具都從這裡 import
       home.html     首頁 /：網站名稱、說明和「登入」
       brief.html    委託頁 /brief（要登入）：說明、計分規則、注意事項、下載訓練影片和訓練程式、在 Colab 開啟
     static/         前端：純 HTML、JS、CSS
-      submit.html   學生貼課堂金鑰、選組、交件、看自己這組的路考紀錄
+      submit.html   登入的學生選組、交件、看自己這組的組員和路考紀錄
       teacher.js    後台（/admin，頁面在 pages/admin.html）：老師管理自己班級的組別、組員、正式路考，看路考紀錄
       playback.js   結果頁播放的計算（時間 ↔ 幀號、某一幀的判定、考官紀錄、分數），有 node 測試
       player.js     播放器：<video> 疊 canvas、播放控制、考官紀錄
@@ -67,7 +67,7 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 
 `VCR_URL`（預設 `https://ai.vanscoding.com`）、`VCR_SERVICE_CREDENTIAL`：網站用 router 的 Key Check 驗課堂金鑰和個人金鑰（`src/road_test/web/key_check.py`，見 `docs/adr/0001-identity-comes-from-router-keys.md`）。通過的結果留 60 秒，最多等 router 3 秒；router 連不上、逾時、5xx、429、401 都回「驗證服務暫時無法使用，請稍後再試」，並送一筆 ERROR 到 vans-signals（只寫金鑰前綴）。本機沒設定 `VCR_SERVICE_CREDENTIAL` 時，router 會回 401，所以金鑰的功能都不能用；測試接假的 router。
 
-`ROAD_TEST_ROUTER`：`real`（預設）或 `fake`。本機開發設成 `fake` 就不用連 router，可以貼 `vcr_sk_dev_student`（56 班的學生）或 `vcr_sk_dev_teacher`（56 班的老師）。在 Fly 上設成 `fake` 時網站拒絕啟動。
+`ROAD_TEST_ROUTER`：`real`（預設）或 `fake`。本機開發設成 `fake` 就不用連 router，按「登入」是 56 班的學生，開 `/admin` 是 56 班的老師。在 Fly 上設成 `fake` 時網站拒絕啟動。
 
 `VCR_OAUTH_CLIENT_ID`（預設 `road-test`）、`VCR_OAUTH_CLIENT_SECRET`、`ROAD_TEST_PUBLIC_URL`（預設 `https://lukao.vanscoding.com`，callback 是它加 `/auth/callback`，要跟 router 登記的一樣）：學生經 router 的 OAuth 登入。`ROAD_TEST_COOKIE_SECRET`：登入 cookie 的簽章密語。`ROAD_TEST_TEACHER_COOKIE_SECRET`：老師 cookie 的簽章密語，換掉它所有老師都要重新登入；**正式環境沒設定時網站拒絕啟動**，部署前要先 `fly secrets set`。secret 都放 Fly secrets，不進 git。本機設 `ROAD_TEST_ROUTER=fake` 時按「登入」就直接登入成 56 班的學生，開 `/admin` 就直接登入成 56 班的老師。
 
@@ -81,12 +81,12 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 - **班級**：選要管理的班級（顯示班級名稱）。
 - **正式路考**：這個班級的開放／關閉，別的班級不受影響。開放期間這一班的模擬路考暫停收件，排隊中的正式路考先跑。
 - **組別**：替這個班級新增組別，設定每組幾次正式路考，旁邊列出每一組的組員（顯示名稱）。某組的正式路考出了問題要重交時，把這組的次數加 1。
-- **組員**：學生第一次進交件頁時從自己班級的組別裡選一組、填顯示名稱，之後鎖定。選錯組的在這裡改到同一班的另一組；之前交的路考照樣算原本那組。
+- **組員**：學生第一次進交件頁時從自己班級的組別裡選一組，之後鎖定；顯示名稱是 router 給的，每次驗金鑰時更新。選錯組的在這裡改到同一班的另一組；之前交的路考照樣算原本那組。
 - **路考紀錄**：這個班級每一組的每一次路考，看得到是組裡哪個學生交的。點「播放」在同一個分頁打開結果頁（金鑰在這個分頁），按播放器的「全螢幕」給全班看。
 
 ### 交件頁 `/submit.html`
 
-學生貼課堂 API Key（VS Code 擴充裡的那把），只看得到自己班級的組別。班級還沒有組別時顯示「這一班還沒開放路考」。選好組別之後交件、看自己這組的路考紀錄和結果。
+學生從首頁登入後進來，不用貼金鑰（課堂金鑰在 HttpOnly cookie 裡），只看得到自己班級的組別。班級還沒有組別時顯示「這一班還沒開放路考」。選好組別之後看得到全部組員，可以交件、看自己這組的路考紀錄（含交件人）和結果。課堂結束或被停用時回首頁並說明原因；router 連不上時顯示「驗證服務暫時無法使用」，不會被登出。
 
 ## 資料夾
 

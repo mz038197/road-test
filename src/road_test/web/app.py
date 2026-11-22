@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlencode
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -24,8 +24,9 @@ from pydantic import BaseModel, Field
 from road_test import paths
 from road_test.detector import CLASSES, Detector, ModelRejected
 from road_test.web.key_check import ClassRef, Identity, Refusal
-from road_test.web.login import (ADMIN_PATH, NOTICES, TeacherCookie, TeacherSession, classroom_identity,
-                                 clear_classroom_cookie, go_home, login_routes)
+from road_test.web.login import (ADMIN_PATH, NOTICE_HEADER, NOTICES, TeacherCookie, TeacherSession,
+                                 classroom_identity, clear_classroom_cookie, go_home, login_routes,
+                                 signed_in_student)
 from road_test.web.router import Router
 from road_test.web.teacher_classes import ManagedClasses
 from road_test.web.upload_limit import UploadLimit
@@ -57,15 +58,16 @@ class RoadTest:
 
 @dataclass(frozen=True)
 class Viewer:
-    """誰在看：課堂金鑰看自己選的組，個人金鑰看自己能管理的班級（road-test ADR 0001）。"""
+    """誰在看：學生看自己選的組，老師看自己能管理的班級（road-test ADR 0003）；老師示範學生流程時兩個都有。"""
     member: Member | None = None
     classes: frozenset[int] = frozenset()
 
+    def can_manage_row(self, row) -> bool:
+        return row["class_id"] in self.classes
+
     def can_see_row(self, row) -> bool:
         """這次交件看不看得到：只給同組的組員和管這個班級的老師（還沒選組的學生什麼都看不到）。"""
-        if self.member is not None:
-            return row["group_id"] == self.member.group_id
-        return row["class_id"] in self.classes
+        return self.can_manage_row(row) or (self.member is not None and row["group_id"] == self.member.group_id)
 
 
 def check_classes(names) -> None:
@@ -126,7 +128,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
 
     @app.middleware("http")
     async def content_security_policy(request: Request, call_next):
-        # 金鑰在 sessionStorage，個人金鑰還能呼叫 LLM：只跑網站自己的 script，不載入第三方、不跑 inline script
+        # 只跑網站自己的 script，不載入第三方、不跑 inline script
         response = await call_next(request)
         response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
         return response
@@ -148,22 +150,11 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         expires = int(clock()) + VIDEO_URL_HOURS * 3600
         return f"/api/submissions/{row['id']}/video?e={expires}&t={video_signature(row, expires)}"
 
-    # 金鑰（road-test ADR 0001）：每個請求帶 Authorization: Bearer vcr_sk_…，用 router 的 Key Check 驗（留 60 秒）。
-    # 網站不存金鑰，也不寫進記錄。
-    def identity(authorization: str | None = Header(None)) -> Identity:
-        scheme, _, key = (authorization or "").partition(" ")
-        if scheme.lower() != "bearer" or not key.strip():
-            raise HTTPException(401, "請貼上你的 API Key。")
-        who = router.check_key(key)
-        if isinstance(who, Refusal):
-            raise HTTPException(503 if who.reason == "unavailable" else 401, who.message)
-        return who
-
     def teacher(request: Request) -> TeacherSession:
         """老師只看網站自己簽章的老師 cookie；課堂金鑰和 Authorization 標頭都進不了後台。"""
         session = teacher_cookie.read(request)
         if session is None:
-            raise HTTPException(401, NOTICES["login_required"])
+            raise HTTPException(401, NOTICES["login_required"], headers={NOTICE_HEADER: "login_required"})
         return session
 
     def classes_of(session: TeacherSession) -> ManagedClasses:
@@ -179,10 +170,12 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             raise HTTPException(403, "你沒有可管理的班級")
         return answer
 
-    def student(who: Identity = Depends(identity)) -> Identity:
-        """課堂金鑰才是學生：只能在自己的 class_id 裡選組、交件、看自己這組。"""
-        if who.kind != "classroom":
-            raise HTTPException(403, "個人金鑰不能交件，請貼上你的課堂 API Key。")
+    def student(request: Request) -> Identity:
+        """登入的學生（cookie 裡的課堂金鑰，ADR 0003）：只能在自己的 class_id 裡選組、交件、看自己這組。
+        顯示名稱每次驗金鑰時跟著 router 更新。"""
+        who = signed_in_student(request, router)
+        if who.display_name:
+            store.update_display_name(who.class_id, who.student_id, who.display_name)
         return who
 
     def class_state(class_id: int) -> dict:
@@ -198,7 +191,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         return {"class_id": who.class_id, "student_id": who.student_id,
                 "groups": [{"id": g["id"], "name": g["name"]} for g in groups],
                 "message": "" if groups else NOT_OPEN,
-                "member": member_view(row), **class_state(who.class_id),
+                "member": member_view(row), "teammates": teammates(row), **class_state(who.class_id),
                 "finals_left": member and store.finals_left(member)}
 
     def membership(who: Identity) -> tuple[sqlite3.Row | None, Member | None]:
@@ -209,6 +202,12 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def member_view(row) -> dict | None:
         return row and {"group_id": row["group_id"], "group_name": row["group_name"], "display_name": row["display_name"]}
 
+    def teammates(row) -> list[str]:
+        """自己這組全部組員的顯示名稱（含自己）；還沒選組是空的。"""
+        if row is None:
+            return []
+        return [m["display_name"] for m in store.members(row["class_id"]) if m["group_id"] == row["group_id"]]
+
     def joined_member(who: Identity) -> Member:
         _row, member = membership(who)
         if member is None:
@@ -218,18 +217,17 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     @app.get("/api/student/records")
     def student_records(who: Identity = Depends(student)):
         """自己這組的路考紀錄，新的在前面。"""
-        return [summary(r) for r in store.of_class_group(joined_member(who).group_id)]
+        return [{**summary(r), "display_name": r["display_name"]}
+                for r in store.of_class_group(joined_member(who).group_id)]
 
     class Join(BaseModel):
         group_id: int
-        display_name: str = Field(min_length=1, max_length=40)
 
     @app.post("/api/student/group", status_code=201)
     def join_group(body: Join, who: Identity = Depends(student)):
-        """第一次進來選組並填顯示名稱，之後鎖定；選錯由老師改。只能選自己班級的組。"""
-        name = body.display_name.strip()
-        if not name:
-            raise HTTPException(400, "請填顯示名稱，讓老師知道你是誰。")
+        """第一次進來選組，之後鎖定；選錯由老師改。只能選自己班級的組。顯示名稱是 router 給的，
+        還沒部署 display_name 的 router 不給名字時先用學生編號，之後驗金鑰時會更新。"""
+        name = who.display_name or f"學生 {who.student_id}"
         try:
             return member_view(store.join(who.class_id, who.student_id, body.group_id, name))
         except NoSuchGroup:
@@ -237,15 +235,15 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         except AlreadyMember:
             raise HTTPException(409, "你已經選過組別了，選錯請找老師改。") from None
 
-    def viewer(request: Request, authorization: str | None = Header(None)) -> Viewer:
-        """老師 cookie 看自己能管理的班級（後台播放任一組用）；課堂金鑰看自己選的組。個人金鑰不再有效。"""
+    def viewer(request: Request) -> Viewer:
+        """老師 cookie 看自己能管理的班級（後台播放任一組用）；學生 cookie 看自己選的組。Authorization 一律不看。
+        老師同時用學生身分示範時，兩邊都看得到。"""
         session = teacher_cookie.read(request)
-        if session is not None:
-            return Viewer(classes=frozenset(c.id for c in classes_of(session).classes))
-        who = identity(authorization)
-        if who.kind != "classroom":
-            raise HTTPException(401, NOTICES["login_required"])
-        return Viewer(member=membership(who)[1])
+        if session is None:
+            return Viewer(member=membership(student(request))[1])
+        who = classroom_identity(request, router)
+        return Viewer(member=membership(who)[1] if isinstance(who, Identity) else None,
+                      classes=frozenset(c.id for c in classes_of(session).classes))
 
     def visible(sid: int, who: Viewer):
         row = store.get(sid)
@@ -323,7 +321,8 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def submission(sid: int, who: Viewer = Depends(viewer)):
         """排隊與進度；有成績之後 result 是計分結果（見 results.score_result）。"""
         row = visible(sid, who)
-        return {**summary(row), "position": store.position(sid), "video_url": video_url(row),
+        return {**summary(row), "can_manage": who.can_manage_row(row),
+                "position": store.position(sid), "video_url": video_url(row),
                 "progress": {"done": row["frames_done"], "total": row["frames_total"]},
                 "result": json.loads(row["result"]) if row["result"] else None}
 
@@ -361,7 +360,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def video(sid: int, t: str = "", e: int = 0):
         """這次路考的影片，給結果頁的 <video> 播放（支援 Range，拖時間軸才順）。
 
-        <video> 不能帶 Authorization 標頭，所以權限放在網址的簽章 t 裡：看得到這次結果的人（自己這組、老師）
+        <video> 的權限放在網址的簽章 t 裡：看得到這次結果的人（自己這組、老師）
         才拿得到 video_url。網址 6 小時後失效（e 是到期時間）；簽章不對、過期一律 403，不透露有沒有這次路考。
         """
         row = store.get(sid)

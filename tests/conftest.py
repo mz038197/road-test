@@ -81,10 +81,11 @@ def router_answers() -> dict[str, dict]:
         TEACHER_KEY: personal,
         ADMIN_KEY: {**personal, "user_id": 1, "is_admin": True, "classes": ALL_CLASSES},
         NO_CLASS_KEY: {**personal, "user_id": 77, "classes": []},
-        CLASSROOM_KEY: contract("classroom-accepted"),
-        CLASSMATE_KEY: {**contract("classroom-accepted"), "student_id": 1235},
-        THIRD_KEY: {**contract("classroom-accepted"), "student_id": 1236},
-        OTHER_CLASS_KEY: {**contract("classroom-accepted"), "student_id": 2001, "class_id": 57, "class_session_id": 790},
+        CLASSROOM_KEY: {**contract("classroom-accepted"), "display_name": "小明"},
+        CLASSMATE_KEY: {**contract("classroom-accepted"), "student_id": 1235, "display_name": "小華"},
+        THIRD_KEY: {**contract("classroom-accepted"), "student_id": 1236, "display_name": "小美"},
+        OTHER_CLASS_KEY: {**contract("classroom-accepted"), "student_id": 2001, "class_id": 57, "class_session_id": 790,
+                          "display_name": "別班的"},
     }
 
 
@@ -126,6 +127,11 @@ def bearer(key: str) -> dict:
     return {"Authorization": f"Bearer {key}"}
 
 
+def as_student(key: str) -> dict:
+    """登入的學生：課堂金鑰在 cookie 裡。"""
+    return {"Cookie": f"road_test_classroom={key}"}
+
+
 # 測試站共用的老師 cookie 簽章密語；cookie 是走一次真的登入流程拿到的（見 teacher_cookies）
 TEACHER_COOKIE_SECRET = "teacher-cookie-secret-for-tests"
 TEACHER_USERS = {TEACHER_KEY: TEACHER_ID, ADMIN_KEY: ADMIN_ID, NO_CLASS_KEY: NO_CLASS_ID}
@@ -149,10 +155,10 @@ def teacher_cookies(tmp_path_factory):
 
 
 def signed_in(key: str) -> dict:
-    """這個人的憑證：老師帶老師 cookie，學生帶課堂金鑰。"""
+    """這個人的憑證：老師帶老師 cookie，學生帶放課堂金鑰的 cookie。"""
     if key in TEACHER_USERS:
         return {"Cookie": f"road_test_teacher={_teacher_cookies[TEACHER_USERS[key]]}"}
-    return bearer(key)
+    return as_student(key)
 
 
 @pytest.fixture
@@ -200,8 +206,7 @@ def seat(client: TestClient) -> None:
     for group, key in STUDENTS.items():
         gid = client.post(f"/api/teacher/classes/{CLASS_ID}/groups", json={"name": group},
                           headers=signed_in(TEACHER_KEY)).json()["id"]
-        joined = client.post("/api/student/group", json={"group_id": gid, "display_name": f"{group} 組的學生"},
-                             headers=bearer(key))
+        joined = client.post("/api/student/group", json={"group_id": gid}, headers=as_student(key))
         assert joined.status_code == 201, joined.text
 
 
@@ -225,7 +230,7 @@ def run_queue(client: TestClient) -> None:
 
 def as_group(group: str) -> dict:
     """這組的學生的課堂金鑰。"""
-    return bearer(STUDENTS[group])
+    return as_student(STUDENTS[group])
 
 
 def records(client: TestClient, group: str) -> list[dict]:

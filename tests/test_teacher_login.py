@@ -9,8 +9,8 @@ from road_test.web.app import RoadTest, create_app
 from road_test.web.oauth import TeacherGrant
 from road_test.web.router import FakeRouter
 
-from conftest import (ALL_CLASSES, CLASSROOM_KEY, FRAME_COUNT, TEACHER_KEY, FakeDetector, bearer, model, router_answers,
-                      run_queue, teacher_contract)
+from conftest import (ALL_CLASSES, CLASSROOM_KEY, FRAME_COUNT, OTHER_CLASS_KEY, TEACHER_KEY, FakeDetector, as_student,
+                      bearer, model, router_answers, run_queue, teacher_contract)
 
 TWELVE_HOURS = 12 * 3600
 SECRET = "teacher-cookie-secret-for-this-test"
@@ -241,12 +241,11 @@ def test_a_teacher_can_open_the_brief_downloads_and_result_page(site, path: str)
 
 
 def hand_in_as_student(data_dir, fake, clock, site) -> int:
-    """56 班的學生選組、交一件（學生這邊的身分由 ticket #4 換成 cookie 前，還是帶標頭）。"""
+    """56 班的學生選組、交一件。"""
     gid = site.post("/api/teacher/classes/56/groups", json={"name": "第 1 組"}).json()["id"]
     with open_site(data_dir, fake, clock) as student:
-        headers = bearer(CLASSROOM_KEY)
-        assert student.post("/api/student/group", json={"group_id": gid, "display_name": "小明"},
-                            headers=headers).status_code == 201
+        headers = as_student(CLASSROOM_KEY)
+        assert student.post("/api/student/group", json={"group_id": gid}, headers=headers).status_code == 201
         sid = student.post("/api/submissions", data={"kind": "mock"}, headers=headers,
                            files={"model": ("best.onnx", model(), "application/octet-stream")}).json()["id"]
         run_queue(student)
@@ -262,6 +261,53 @@ def test_a_teacher_sees_a_result_and_plays_its_video(data_dir, fake, clock, site
     assert seen.status_code == 200 and seen.json()["result"]["score"] is not None
     assert site.get(f"/api/submissions/{sid}/detections").status_code == 200
     assert site.get(seen.json()["video_url"]).status_code == 200
+
+
+def test_only_a_teacher_is_offered_the_back_office_from_a_result(data_dir, fake, clock, site) -> None:
+    sign_in(site)
+    sid = hand_in_as_student(data_dir, fake, clock, site)
+
+    assert site.get(f"/api/submissions/{sid}").json()["can_manage"] is True
+    with open_site(data_dir, fake, clock) as student:
+        assert student.get(f"/api/submissions/{sid}",
+                           headers=as_student(CLASSROOM_KEY)).json()["can_manage"] is False
+        page = student.get("/result.html").text
+    assert "管理頁" not in page and "teacher.html" not in page and "/admin" not in page, "學生看不到後台的入口"
+
+
+def test_a_teacher_demonstrating_as_a_student_sees_their_own_group_in_a_class_they_do_not_manage(
+        data_dir, fake, clock, site) -> None:
+    sign_in(site)
+    gid = site.post("/api/teacher/classes/57/groups", json={"name": "第 1 組"}).json()["id"]
+    fake.login_as = OTHER_CLASS_KEY
+    sign_in_student(site)
+    assert site.post("/api/student/group", json={"group_id": gid}).status_code == 201
+    sid = site.post("/api/submissions", data={"kind": "mock"},
+                    files={"model": ("best.onnx", model(), "application/octet-stream")}).json()["id"]
+    fake.teachers[42] = {**fake.teachers[42], "classes": [{"id": 56, "name": "週一 程式設計"}]}
+
+    with open_site(data_dir, fake, clock) as fresh:
+        fresh.cookies.update(dict(site.cookies))
+        seen = fresh.get(f"/api/submissions/{sid}")
+
+    assert seen.status_code == 200 and seen.json()["can_manage"] is False
+
+
+@pytest.mark.parametrize("path", ["/api/teacher/classes", "/api/submissions/1"])
+def test_a_teacher_api_without_a_login_tells_the_page_to_go_home(site, path: str) -> None:
+    response = site.get(path)
+
+    assert response.status_code == 401
+    assert response.headers["X-Login-Notice"] == "login_required"
+
+
+def test_an_expired_teacher_cookie_tells_the_page_to_go_home(site, clock) -> None:
+    sign_in(site)
+    clock.now += TWELVE_HOURS + 1
+
+    response = site.get("/api/teacher/classes")
+
+    assert (response.status_code, response.headers["X-Login-Notice"]) == (401, "login_required")
 
 
 def test_a_teacher_cannot_see_a_result_of_a_class_they_do_not_manage(data_dir, fake, clock, site) -> None:
