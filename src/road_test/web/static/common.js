@@ -36,7 +36,9 @@ async function api(path, options = {}) {
   if (!response.ok) {
     const notice = response.status === 401 && response.headers?.get("X-Login-Notice");
     if (notice) location.replace(loginPage(notice));
-    throw new Error(typeof body.detail === "string" ? body.detail : `伺服器回應 ${response.status}`);
+    const error = new Error(typeof body.detail === "string" ? body.detail : `伺服器回應 ${response.status}`);
+    error.studentsOnly = response.headers?.get("X-Students-Only") === "1";  // 登入的老師開了學生才能用的功能
+    throw error;
   }
   return body;
 }

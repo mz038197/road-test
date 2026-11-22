@@ -27,6 +27,11 @@ def sign_in_teacher(site) -> None:
     assert site.get("/admin").url.path == "/admin"
 
 
+def teacher_with_classroom_key(site, key: str) -> dict:
+    """老師 cookie 加上一把課堂金鑰：老師用學生身分示範時的瀏覽器。"""
+    return {"Cookie": f"road_test_teacher={site.cookies['road_test_teacher']}; road_test_classroom={key}"}
+
+
 def test_signed_out_the_header_has_no_identity(site) -> None:
     response = site.get("/api/me")
 
@@ -111,6 +116,54 @@ def test_the_logo_is_served(site) -> None:
     response = site.get("/logo.svg")
 
     assert response.status_code == 200 and "svg" in response.headers["content-type"]
+
+
+def test_a_teacher_on_the_hand_in_page_is_told_only_students_hand_in(site) -> None:
+    sign_in_teacher(site)
+
+    response = site.get("/api/student")
+
+    assert response.status_code == 403
+    assert response.headers["X-Students-Only"] == "1"
+    assert "X-Login-Notice" not in response.headers
+    assert "只有學生" in response.json()["detail"]
+
+
+def test_a_teacher_whose_demo_login_expired_is_told_the_same_and_the_dead_key_is_cleared(site) -> None:
+    sign_in_teacher(site)
+
+    response = site.get("/api/student", headers=teacher_with_classroom_key(site, "vcr_cls_expired"))
+
+    assert response.status_code == 403 and response.headers["X-Students-Only"] == "1"
+    assert "road_test_classroom" in response.headers["set-cookie"]
+
+
+def test_a_teacher_demonstrating_as_a_student_can_still_use_the_hand_in_page(site) -> None:
+    sign_in_teacher(site)
+    sign_in_student(site)
+
+    assert site.get("/api/student").status_code == 200
+
+
+def test_when_the_router_is_down_a_teacher_with_a_demo_login_sees_the_outage(site) -> None:
+    sign_in_teacher(site)
+
+    response = site.get("/api/student", headers=teacher_with_classroom_key(site, DOWN_KEY))
+
+    assert response.status_code == 503 and "X-Students-Only" not in response.headers
+
+
+def test_signed_out_the_hand_in_page_still_sends_people_home(site) -> None:
+    response = site.get("/api/student")
+
+    assert response.status_code == 401 and response.headers["X-Login-Notice"] == "login_required"
+    assert "X-Students-Only" not in response.headers
+
+
+def test_the_hand_in_page_itself_has_no_teacher_entry(site) -> None:
+    sign_in_student(site)
+
+    assert "/admin" not in site.get("/submit.html").text
 
 
 def test_the_brief_tells_students_about_login_and_not_about_pasting_a_key(site) -> None:

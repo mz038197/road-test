@@ -11,7 +11,7 @@ function kind() {
 }
 
 function show(part) {
-  for (const id of ["problem", "not-open", "join", "work"]) $(id).hidden = id !== part;
+  for (const id of ["problem", "students-only", "not-open", "join", "work"]) $(id).hidden = id !== part;
 }
 
 function showProblem(message) {
@@ -26,6 +26,11 @@ async function enter() {
   try {
     me = await api("/api/student");
   } catch (e) {
+    if (e.studentsOnly) {
+      renderStudentsOnly($("students-only"), e.message);
+      show("students-only");
+      return;
+    }
     showProblem(e.message);
     return;
   }

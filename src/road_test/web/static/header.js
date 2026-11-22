@@ -35,8 +35,17 @@ function renderSiteHeader(actions, me) {
   actions.replaceChildren(...items, siteHeaderLogout());
 }
 
+// 伺服器確認是登入的老師才會呼叫：後台連結不寫在 submit.html 裡，學生看不到
+function renderStudentsOnly(box, message) {
+  const text = document.createElement("p");
+  text.textContent = message;
+  const back = siteHeaderLink("回後台", "/admin");
+  back.className = "button";
+  box.replaceChildren(text, back);
+}
+
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { renderSiteHeader };  // node 測試用（tests/js/header.test.js）
+  module.exports = { renderSiteHeader, renderStudentsOnly };  // node 測試用（tests/js/header.test.js）
 } else {
   const siteActions = document.getElementById("site-actions");
   // 問不到身分時標題列留空，頁面照常可用
