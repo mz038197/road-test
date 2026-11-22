@@ -3,5 +3,6 @@
   "kind": "classroom",
   "student_id": 1234,
   "class_id": 56,
-  "class_session_id": 789
+  "class_session_id": 789,
+  "display_name": "07王小明"
 }

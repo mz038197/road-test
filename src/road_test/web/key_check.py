@@ -40,6 +40,7 @@ class Identity:
     user_id: int | None = None           # 個人金鑰才有
     is_admin: bool = False
     classes: tuple[ClassRef, ...] = ()  # 個人金鑰能管理的班級；admin 是所有班級（router ADR 0083）
+    display_name: str = ""               # router 給的顯示名稱（router ADR 0095），只用來顯示
 
     @property
     def is_teacher(self) -> bool:
@@ -129,17 +130,22 @@ class KeyCheck:
             log.error("Key Check 失敗（%s）：HTTP %s，金鑰 %s…", self._url, response.status_code, prefix)
             return UNAVAILABLE
         try:
-            return self._read(response.json())
+            return read_answer(response.json())
         except (ValueError, KeyError, TypeError) as e:  # 回應不符合合約
             log.error("Key Check 的回應不符合合約：%s，金鑰 %s…", type(e).__name__, prefix)
             return UNAVAILABLE
 
-    @staticmethod
-    def _read(body: dict) -> Identity | Refusal:
-        if not body["accepted"]:
-            return Refusal(body["reason"], body["message"])
-        if body["kind"] == "personal":
-            return Identity(kind="personal", user_id=body["user_id"], is_admin=bool(body["is_admin"]),
-                            classes=tuple(ClassRef(c["id"], c["name"]) for c in body["classes"]))
-        return Identity(kind=body["kind"], student_id=body["student_id"], class_id=body["class_id"],
-                        class_session_id=body["class_session_id"])
+
+def read_answer(body: dict) -> Identity | Refusal:
+    """把 router 的 Key Check 回應（docs/contracts/key-check）讀成 Identity 或 Refusal。
+
+    display_name 是 router ADR 0095 加的；還沒部署到的 router 不會送，這時當成空字串，不擋人。
+    """
+    if not body["accepted"]:
+        return Refusal(body["reason"], body["message"])
+    name = body.get("display_name") or ""
+    if body["kind"] == "personal":
+        return Identity(kind="personal", user_id=body["user_id"], is_admin=bool(body["is_admin"]), display_name=name,
+                        classes=tuple(ClassRef(c["id"], c["name"]) for c in body["classes"]))
+    return Identity(kind=body["kind"], student_id=body["student_id"], class_id=body["class_id"],
+                    class_session_id=body["class_session_id"], display_name=name)

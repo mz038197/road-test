@@ -1,7 +1,7 @@
 """road-test 自己的 Key Check 用戶端（router ADR 0082）：HTTP 用 httpx.MockTransport 回放 router 的合約範例檔。
 
 範例檔在 tests/contracts/key-check/，從 vans_coding_router 的 docs/contracts/key-check/ 複製
-（router commit bff594f，#94）。router 改了範例就重新複製一份。
+（含 router ADR 0095 的 display_name）。router 改了範例就重新複製一份。
 """
 import json
 import threading
@@ -71,6 +71,19 @@ def test_a_personal_key_comes_back_with_the_classes_it_manages() -> None:
     assert (who.kind, who.user_id, who.is_admin) == ("personal", 42, False)
     assert who.classes == (ClassRef(56, "週一 程式設計"), ClassRef(57, "週三 進階班")), "班級帶名稱，畫面才顯示得出來"
     assert who.is_teacher, "classes 不是空的就有老師身分"
+
+
+def test_an_accepted_key_carries_the_display_name_from_the_router() -> None:
+    assert key_check(FakeRouter(contract("classroom-accepted"))).check(KEY).display_name == "07王小明"
+    assert key_check(FakeRouter(contract("personal-accepted"))).check(KEY).display_name == "陳老師"
+
+
+def test_a_router_that_does_not_send_a_display_name_yet_still_accepts_the_key() -> None:
+    answer = {k: v for k, v in contract("classroom-accepted").items() if k != "display_name"}
+
+    who = key_check(FakeRouter(answer)).check(KEY)
+
+    assert (who.student_id, who.display_name) == (1234, ""), "router 還沒部署 ADR 0095 時，學生照常能用"
 
 
 def test_a_personal_key_without_classes_has_no_teacher_standing() -> None:
