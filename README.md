@@ -12,7 +12,8 @@ src/road_test/      Python 套件，網站和老師工具都從這裡 import
   scoring.py        計分：score(answers, detections, conf) → 考官紀錄、每個計分幀的判定、成績
   detector.py       偵測器：OnnxDetector 用 onnxruntime 跑學生的 ONNX（結果跟 ultralytics 一樣）
   web/              路考網站（FastAPI）
-    app.py          HTTP API；create_app(資料夾, 偵測器, 路考, verify_key=…) 讓測試換成假偵測器、假的 router
+    app.py          HTTP API；create_app(資料夾, 偵測器, 路考, router=…) 讓測試換成假偵測器、假的 router
+    router.py       router 介面：跟 router 打交道的事都經過它；正式環境接真的，測試和本機開發接假的
     key_check.py    呼叫 router 的 Key Check 驗課堂金鑰、個人金鑰（通過的留 60 秒）
     store.py        交件、偵測結果、成績、組別、組員存在 SQLite
     worker.py       排隊：先偵測計分幀算成績，再補完其餘的幀
@@ -60,7 +61,9 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 
 `ROAD_TEST_STUDENT`：學生訓練程式的資料夾（預設 repo 的 `student/`；Docker 映像裡是 `/app/student`）。
 
-`VCR_URL`（預設 `https://ai.vanscoding.com`）、`VCR_SERVICE_CREDENTIAL`：網站用 router 的 Key Check 驗課堂金鑰和個人金鑰（`src/road_test/web/key_check.py`，見 `docs/adr/0001-identity-comes-from-router-keys.md`）。通過的結果留 60 秒，最多等 router 3 秒；router 連不上、逾時、5xx、429、401 都回「驗證服務暫時無法使用，請稍後再試」，並送一筆 ERROR 到 vans-signals（只寫金鑰前綴）。本機沒設定 `VCR_SERVICE_CREDENTIAL` 時，router 會回 401，所以金鑰的功能都不能用；測試注入假的驗證器，不用 router。
+`VCR_URL`（預設 `https://ai.vanscoding.com`）、`VCR_SERVICE_CREDENTIAL`：網站用 router 的 Key Check 驗課堂金鑰和個人金鑰（`src/road_test/web/key_check.py`，見 `docs/adr/0001-identity-comes-from-router-keys.md`）。通過的結果留 60 秒，最多等 router 3 秒；router 連不上、逾時、5xx、429、401 都回「驗證服務暫時無法使用，請稍後再試」，並送一筆 ERROR 到 vans-signals（只寫金鑰前綴）。本機沒設定 `VCR_SERVICE_CREDENTIAL` 時，router 會回 401，所以金鑰的功能都不能用；測試接假的 router。
+
+`ROAD_TEST_ROUTER`：`real`（預設）或 `fake`。本機開發設成 `fake` 就不用連 router，可以貼 `vcr_sk_dev_student`（56 班的學生）或 `vcr_sk_dev_teacher`（56 班的老師）。在 Fly 上設成 `fake` 時網站拒絕啟動。
 
 `VANS_SIGNALS_URL`、`VANS_SIGNALS_TOKEN`：網站的 ERROR 記錄（交件偵測失敗、請求裡沒想到的錯）送到 vans-signals，Slack 上 Source 是 `road-test`（Fly 上放 secrets）。兩個都設定才送，本機不用設定。送的時候不等、約 2 秒逾時、不重送，送失敗不影響使用者。見 `docs/adr/0002-errors-go-to-vans-signals.md`。
 

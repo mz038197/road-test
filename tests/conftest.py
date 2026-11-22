@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from road_test.detector import ModelRejected
 from road_test.web.app import RoadTest, create_app
 from road_test.web.key_check import KeyCheck
+from road_test.web.router import RealRouter
 
 CLASSES = ["car", "pedestrian", "bicyclist", "sign"]
 PED = [100, 100, 140, 200]
@@ -55,7 +56,7 @@ def model(boxes: dict | None = None, names: list[str] = CLASSES, crash: bool = F
     return json.dumps({"names": names, "boxes": boxes, "crash": crash}).encode()
 
 
-# 金鑰：假的 router 依金鑰回答 router 的合約範例檔（tests/contracts/key-check/，複製自 router commit bff594f）
+# 金鑰：假的 router 依金鑰回答 router 的合約範例檔（tests/contracts/key-check/，複製自 router 的 docs/contracts/key-check/）
 CONTRACTS = Path(__file__).parent / "contracts" / "key-check"
 TEACHER_KEY = "vcr_sk_teacher" + "t" * 40      # 個人金鑰，管理 56「週一 程式設計」、57「週三 進階班」
 ADMIN_KEY = "vcr_sk_admin00" + "a" * 40        # admin 的個人金鑰：classes 是所有班級
@@ -85,17 +86,17 @@ def router_answers() -> dict[str, dict]:
     }
 
 
-def fake_router_key_check() -> KeyCheck:
-    """road-test 自己的 Key Check 用戶端，接到假的 router（在 HTTP 邊界上換掉）。"""
+def fake_router() -> RealRouter:
+    """假的 router：只換掉 HTTP 那一層，網站自己的 Key Check 用戶端（快取、記錄、錯誤處理）照樣跑。"""
     answers = router_answers()
 
-    def router(request: httpx.Request) -> httpx.Response:
+    def http(request: httpx.Request) -> httpx.Response:
         key = json.loads(request.content)["api_key"]
         if key == DOWN_KEY:
             return httpx.Response(503)
         return httpx.Response(200, json=answers.get(key, contract("refused")))
 
-    return KeyCheck("https://router.test", "road-test-credential", transport=httpx.MockTransport(router))
+    return RealRouter(KeyCheck("https://router.test", "road-test-credential", transport=httpx.MockTransport(http)))
 
 
 def bearer(key: str) -> dict:
@@ -115,7 +116,7 @@ def open_site(data_dir: Path):
     opened = []
 
     def open_(**options) -> TestClient:
-        options.setdefault("verify_key", fake_router_key_check().check)
+        options.setdefault("router", fake_router())
         app = create_app(data_dir, load_detector=FakeDetector,
                          road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT),
                                      "final": RoadTest("final", "Mini", FRAME_COUNT)}, workers=0, **options)

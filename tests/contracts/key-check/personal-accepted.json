@@ -2,6 +2,7 @@
   "accepted": true,
   "kind": "personal",
   "user_id": 42,
+  "display_name": "陳老師",
   "is_admin": false,
   "classes": [
     {"id": 56, "name": "週一 程式設計"},

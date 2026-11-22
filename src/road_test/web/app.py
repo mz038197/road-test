@@ -22,7 +22,8 @@ from pydantic import BaseModel, Field
 
 from road_test import paths
 from road_test.detector import CLASSES, Detector, ModelRejected
-from road_test.web.key_check import UNAVAILABLE, ClassRef, Identity, Refusal
+from road_test.web.key_check import ClassRef, Identity, Refusal
+from road_test.web.router import Router
 from road_test.web.upload_limit import UploadLimit
 from road_test.web.results import score_result
 from road_test.web.settings import DEFAULT_MAX_UPLOAD_MB
@@ -83,14 +84,14 @@ def _video_key(data_dir: Path) -> bytes:
 
 
 def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_tests: dict[str, RoadTest], *,
-               workers: int, fill_chunk: int = 500, student_dir: Path | None = None, clock: Callable[[], float] = time.time,
-               max_upload_bytes: int = DEFAULT_MAX_UPLOAD_MB * 1_000_000,
-               verify_key: Callable[[str], Identity | Refusal] | None = None) -> FastAPI:
+               workers: int, router: Router, fill_chunk: int = 500, student_dir: Path | None = None,
+               clock: Callable[[], float] = time.time,
+               max_upload_bytes: int = DEFAULT_MAX_UPLOAD_MB * 1_000_000) -> FastAPI:
     """data_dir：路考資料夾；load_detector：讀模型檔的函式（讀不進來要丟 ModelRejected）；
     road_tests：{"mock": RoadTest, "final": RoadTest}；workers：背景 worker 數（main 用 settings.from_env 的預設），0 就不開（測試自己跑 run_until_idle）；
     student_dir：發給學生的訓練程式（預設 paths.student_dir()）；clock：現在幾秒（測試換成假時鐘）；
     max_upload_bytes：交件的大小上限（超過回 413，見 upload_limit.py）；
-    verify_key：驗金鑰的函式（main 用 key_check.KeyCheck.check，測試換成接假 router 的），None 就是一律「驗證服務暫時無法使用」。
+    router：router 介面，跟 router 打交道的事都經過它（見 router.py；main 依環境選，測試接假的 router）。
     """
     data_dir = Path(data_dir)
     student_dir = Path(student_dir) if student_dir else paths.student_dir()
@@ -134,13 +135,11 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
 
     # 金鑰（road-test ADR 0001）：每個請求帶 Authorization: Bearer vcr_sk_…，用 router 的 Key Check 驗（留 60 秒）。
     # 網站不存金鑰，也不寫進記錄。
-    check_key = verify_key or (lambda _key: UNAVAILABLE)
-
     def identity(authorization: str | None = Header(None)) -> Identity:
         scheme, _, key = (authorization or "").partition(" ")
         if scheme.lower() != "bearer" or not key.strip():
             raise HTTPException(401, "請貼上你的 API Key。")
-        who = check_key(key)
+        who = router.check_key(key)
         if isinstance(who, Refusal):
             raise HTTPException(503 if who.reason == "unavailable" else 401, who.message)
         return who
