@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from road_test.detector import ModelRejected
 from road_test.web.app import RoadTest, create_app
 from road_test.web.key_check import KeyCheck
+from road_test.web.oauth import OAuthClient
 from road_test.web.router import RealRouter
 
 CLASSES = ["car", "pedestrian", "bicyclist", "sign"]
@@ -96,7 +97,10 @@ def fake_router() -> RealRouter:
             return httpx.Response(503)
         return httpx.Response(200, json=answers.get(key, contract("refused")))
 
-    return RealRouter(KeyCheck("https://router.test", "road-test-credential", transport=httpx.MockTransport(http)))
+    transport = httpx.MockTransport(http)
+    return RealRouter(KeyCheck("https://router.test", "road-test-credential", transport=transport),
+                      OAuthClient("https://router.test", "road-test", "client-secret", "https://site.test",
+                                  transport=transport))
 
 
 def bearer(key: str) -> dict:
@@ -120,7 +124,7 @@ def open_site(data_dir: Path):
         app = create_app(data_dir, load_detector=FakeDetector,
                          road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT),
                                      "final": RoadTest("final", "Mini", FRAME_COUNT)}, workers=0, **options)
-        c = TestClient(app)
+        c = TestClient(app, base_url="https://testserver")  # 登入的 cookie 是 Secure，只在 https 送出
         c.__enter__()
         opened.append(c)
         return c

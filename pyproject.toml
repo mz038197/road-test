@@ -44,4 +44,4 @@ override-dependencies = ["opencv-python; sys_platform == 'never'"]
 
 [tool.setuptools.package-data]
 # 前端檔案跟著套件走（Docker 裡不是 editable 安裝）
-"road_test.web" = ["static/*"]
+"road_test.web" = ["static/*", "pages/*"]
