@@ -20,43 +20,42 @@ KEY_PREFIX = "vcr_sk_"
 KEEP_SECONDS = 60  # 通過的結果留多久；router 故障時不延長
 TIMEOUT_SECONDS = 3.0  # 整次呼叫最多等 router 幾秒（不是每個階段各算），逾時當作 unavailable
 PREFIX_SHOWN = 11  # 記錄裡只寫金鑰的前幾個字（vcr_sk_ 加 4 個字）
+UNAVAILABLE_REASON = "unavailable"  # router 連不上、逾時或回應不對
+CLASSROOM_KIND = "classroom"
 
 log = logging.getLogger(__name__)  # road_test 底下的 ERROR 會送到 vans-signals（signals.py）
 
 
 @dataclass(frozen=True)
 class ClassRef:
-    """個人金鑰能管理的一個班級：router 的 class_id 和班級名稱。"""
+    """老師能管理的一個班級：router 的 class_id 和班級名稱。"""
     id: int
     name: str
 
 
 @dataclass(frozen=True)
 class Identity:
-    kind: str                            # "classroom"（課堂金鑰）或 "personal"（個人金鑰）
-    student_id: int | None = None        # 課堂金鑰才有
-    class_id: int | None = None
-    class_session_id: int | None = None
-    user_id: int | None = None           # 個人金鑰才有
-    is_admin: bool = False
-    classes: tuple[ClassRef, ...] = ()  # 個人金鑰能管理的班級；admin 是所有班級（router ADR 0083）
-    display_name: str = ""               # router 給的顯示名稱（router ADR 0095），只用來顯示
-
-    @property
-    def is_teacher(self) -> bool:
-        """個人金鑰、而且是 admin 或有班級，才有老師身分（ADR 0083）。"""
-        return self.kind == "personal" and (self.is_admin or bool(self.classes))
+    """課堂金鑰說的學生。"""
+    student_id: int
+    class_id: int
+    class_session_id: int
+    display_name: str = ""  # router 給的顯示名稱（router ADR 0095），只用來顯示
 
 
 @dataclass(frozen=True)
 class Refusal:
-    reason: str    # router 的原因代碼，或 router 連不上時的 "unavailable"
+    reason: str    # router 的原因代碼，或 router 連不上時的 UNAVAILABLE_REASON
     message: str   # 直接給使用者看的中文訊息（router 給的）
+
+    @property
+    def is_outage(self) -> bool:
+        """router 連不上：不是金鑰的問題，不能把人登出。"""
+        return self.reason == UNAVAILABLE_REASON
 
 
 INVALID = Refusal("invalid", "無效的 API 金鑰")  # 不是 vcr_sk_ 開頭，不用問 router（訊息跟 router 的一樣）
 # router 連不上、逾時、5xx、429、401：唯一要自己帶的訊息，其他都用 router 給的
-UNAVAILABLE = Refusal("unavailable", "驗證服務暫時無法使用，請稍後再試")
+UNAVAILABLE = Refusal(UNAVAILABLE_REASON, "驗證服務暫時無法使用，請稍後再試")
 
 
 class KeyCheck:
@@ -140,12 +139,12 @@ def read_answer(body: dict) -> Identity | Refusal:
     """把 router 的 Key Check 回應（docs/contracts/key-check）讀成 Identity 或 Refusal。
 
     display_name 是 router ADR 0095 加的；還沒部署到的 router 不會送，這時當成空字串，不擋人。
+    Key Check 的合約還會回其他 kind（例如 personal）。路考網站只收課堂金鑰（ADR 0003），其他 kind 一律當無效；
+    不能照課堂金鑰的欄位讀，少欄位會變成 KeyError，被當成 router 故障。
     """
     if not body["accepted"]:
         return Refusal(body["reason"], body["message"])
-    name = body.get("display_name") or ""
-    if body["kind"] == "personal":
-        return Identity(kind="personal", user_id=body["user_id"], is_admin=bool(body["is_admin"]), display_name=name,
-                        classes=tuple(ClassRef(c["id"], c["name"]) for c in body["classes"]))
-    return Identity(kind=body["kind"], student_id=body["student_id"], class_id=body["class_id"],
-                    class_session_id=body["class_session_id"], display_name=name)
+    if body["kind"] != CLASSROOM_KIND:
+        return INVALID
+    return Identity(student_id=body["student_id"], class_id=body["class_id"],
+                    class_session_id=body["class_session_id"], display_name=body.get("display_name") or "")

@@ -17,16 +17,17 @@ from typing import Callable
 from urllib.parse import urlencode
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from road_test import paths
 from road_test.detector import CLASSES, Detector, ModelRejected
-from road_test.web.key_check import ClassRef, Identity, Refusal
-from road_test.web.login import (ADMIN_PATH, NOTICE_HEADER, NOTICES, TeacherCookie, TeacherSession,
-                                 classroom_identity, clear_classroom_cookie, go_home, login_routes,
-                                 signed_in_student)
+from road_test.web.key_check import UNAVAILABLE_REASON, ClassRef, Identity, Refusal
+from road_test.web.login import (ADMIN_PATH, ATTEMPT_NOTICES, NOTICE_HEADER, NOTICES, TeacherCookie, TeacherSession,
+                                 back_home, classroom_identity, clear_classroom_cookie, clear_marker, has_marker,
+                                 login_routes, require_student)
 from road_test.web.router import Router
 from road_test.web.teacher_classes import ManagedClasses
 from road_test.web.upload_limit import UploadLimit
@@ -38,10 +39,11 @@ from road_test.web.worker import Worker
 log = logging.getLogger(__name__)
 
 STATIC = Path(__file__).parent / "static"
-PAGES = Path(__file__).parent / "pages"  # 要經過後端的頁面（首頁、委託頁），不放 static，才不會繞過登入
+PAGES = Path(__file__).parent / "pages"  # 要由伺服器判斷登入的頁面（首頁、委託頁、後台）
+PUBLIC_FILES = frozenset({"style.css", "common.js", "header.js", "logo.svg"})  # 首頁要用的；其他前端檔案都要登入
 SIGNED_OUT_ACTIONS = '<p><a class="button" href="/auth/student/login">登入</a></p>'
 STUDENT_ACTIONS = '<p><a class="button" href="/brief">進入路考</a></p>'
-TEACHER_ACTIONS = '<p><a class="button" href="/admin">進入後台</a></p>'  # 只有老師 cookie 有效時才放進頁面
+TEACHER_ENTRY = '<a href="/admin">進入後台</a>'  # 首頁標題列右上角，只有老師 cookie 有效時才放進頁面
 KIND_NAMES = {"mock": "模擬路考", "final": "正式路考"}
 TRAINING_VIDEO = "0016E5"  # 訓練影片，在路考資料夾的 videos/ 裡；不會出現在路考裡
 VIDEO_URL_HOURS = 6  # 路考影片網址幾小時後失效（結果頁每次拿成績都會拿到新的網址）
@@ -162,7 +164,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def classes_of(session: TeacherSession) -> ManagedClasses:
         answer = router.teacher_classes(session.user_id)
         if isinstance(answer, Refusal):
-            raise HTTPException(503 if answer.reason == "unavailable" else 403, answer.message)
+            raise HTTPException(503 if answer.is_outage else 403, answer.message)
         return answer
 
     def managed(session: TeacherSession = Depends(teacher)) -> ManagedClasses:
@@ -173,10 +175,9 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         return answer
 
     def student(request: Request) -> Identity:
-        """登入的學生（cookie 裡的課堂金鑰，ADR 0003）：只能在自己的 class_id 裡選組、交件、看自己這組。
-        顯示名稱每次驗金鑰時跟著 router 更新。"""
+        """登入的學生（cookie 裡的課堂金鑰，ADR 0003）：只能在自己的 class_id 裡選組、交件、看自己這組。"""
         try:
-            who = signed_in_student(request, router)
+            return require_student(request, identify(request))
         except HTTPException as refused:
             if refused.status_code != 401 or teacher_cookie.read(request) is None:
                 raise
@@ -185,9 +186,17 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
             if "Set-Cookie" in refused.headers:
                 headers["Set-Cookie"] = refused.headers["Set-Cookie"]
             raise HTTPException(403, STUDENTS_ONLY, headers=headers) from None
-        if who.display_name:
+
+    def identify(request: Request) -> Identity | Refusal | None:
+        """問 Key Check 這把課堂金鑰是誰；每次通過都讓組員的顯示名稱跟著 router（ADR 0003）。"""
+        who = classroom_identity(request, router)
+        if isinstance(who, Identity) and who.display_name:
             store.update_display_name(who.class_id, who.student_id, who.display_name)
         return who
+
+    def student_label(student_id: int) -> str:
+        """router 還沒給顯示名稱時用的名字。"""
+        return f"學生 {student_id}"
 
     def class_state(class_id: int) -> dict:
         is_open = store.class_final_open(class_id)
@@ -196,16 +205,20 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
 
     @app.get("/api/me")
     def who_am_i(request: Request, response: Response):
-        """標題列要顯示的身分。沒登入、金鑰失效或 router 連不上都只是「不顯示身分」：不回 401、不清 cookie。"""
+        """標題列要顯示的身分，不回 401。金鑰被拒就清掉；router 連不上時留著 cookie，並帶上要顯示的原因。"""
         response.headers["Cache-Control"] = "no-store"
+        who = identify(request)
+        if isinstance(who, Refusal) and not who.is_outage:
+            clear_classroom_cookie(response)
         session = teacher_cookie.read(request)
         if session is not None:
             return {"role": "teacher", "display_name": session.display_name}
-        who = classroom_identity(request, router)
+        if isinstance(who, Refusal) and who.is_outage:
+            return {"role": None, "message": NOTICES[UNAVAILABLE_REASON]}
         if not isinstance(who, Identity):
             return {"role": None}
         row = store.member(who.class_id, who.student_id)
-        name = who.display_name or (row["display_name"] if row else f"學生 {who.student_id}")
+        name = who.display_name or (row["display_name"] if row else student_label(who.student_id))
         return {"role": "student", "display_name": name, "group_name": row["group_name"] if row else None}
 
     @app.get("/api/student")
@@ -216,7 +229,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         return {"class_id": who.class_id, "student_id": who.student_id,
                 "groups": [{"id": g["id"], "name": g["name"]} for g in groups],
                 "message": "" if groups else NOT_OPEN,
-                "member": member_view(row), "teammates": teammates(row), **class_state(who.class_id),
+                "member": member_view(row), "members": group_members(row), **class_state(who.class_id),
                 "finals_left": member and store.finals_left(member)}
 
     def membership(who: Identity) -> tuple[sqlite3.Row | None, Member | None]:
@@ -227,7 +240,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def member_view(row) -> dict | None:
         return row and {"group_id": row["group_id"], "group_name": row["group_name"], "display_name": row["display_name"]}
 
-    def teammates(row) -> list[str]:
+    def group_members(row) -> list[str]:
         """自己這組全部組員的顯示名稱（含自己）；還沒選組是空的。"""
         if row is None:
             return []
@@ -252,7 +265,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     def join_group(body: Join, who: Identity = Depends(student)):
         """第一次進來選組，之後鎖定；選錯由老師改。只能選自己班級的組。顯示名稱是 router 給的，
         還沒部署 display_name 的 router 不給名字時先用學生編號，之後驗金鑰時會更新。"""
-        name = who.display_name or f"學生 {who.student_id}"
+        name = who.display_name or student_label(who.student_id)
         try:
             return member_view(store.join(who.class_id, who.student_id, body.group_id, name))
         except NoSuchGroup:
@@ -266,7 +279,7 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         session = teacher_cookie.read(request)
         if session is None:
             return Viewer(member=membership(student(request))[1])
-        who = classroom_identity(request, router)
+        who = identify(request)
         return Viewer(member=membership(who)[1] if isinstance(who, Identity) else None,
                       classes=frozenset(c.id for c in classes_of(session).classes))
 
@@ -414,19 +427,45 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request, notice: str = ""):
-        """首頁：沒登入只有網站名稱、說明和「登入」；學生看到「進入路考」，老師看到「進入後台」。
-        提示條的文字只從 NOTICES 來。"""
-        if teacher_cookie.read(request) is not None:
-            actions = TEACHER_ACTIONS
-        elif isinstance(classroom_identity(request, router), Identity):
-            actions = STUDENT_ACTIONS
+        """首頁：沒登入只有網站名稱、說明和「登入」；學生看到「進入路考」，老師在標題列看到「進入後台」。
+        router 故障時只說明原因，不放「登入」。提示條的文字只從 NOTICES 來。"""
+        who = identify(request)
+        is_teacher = teacher_cookie.read(request) is not None
+        outage = isinstance(who, Refusal) and who.is_outage
+        refused = isinstance(who, Refusal) and not outage
+        ended = refused or (who is None and has_marker(request))  # 課堂結束或金鑰失效，說一次就清掉標記
+        if ended and not is_teacher and notice not in ATTEMPT_NOTICES:
+            notice = "expired"
+        if outage and not is_teacher:
+            notice = UNAVAILABLE_REASON
+        if is_teacher or outage:
+            actions = ""
         else:
-            actions = SIGNED_OUT_ACTIONS
+            actions = STUDENT_ACTIONS if isinstance(who, Identity) else SIGNED_OUT_ACTIONS
+        response = home_page(notice, actions, TEACHER_ENTRY if is_teacher else "")
+        if refused:
+            clear_classroom_cookie(response)
+        if ended:
+            clear_marker(response)
+        return response
+
+    def home_page(notice: str, actions: str, account: str = "", status_code: int = 200) -> HTMLResponse:
         message = NOTICES.get(notice)
         html = (PAGES / "home.html").read_text(encoding="utf-8")
         html = html.replace("<!--notice-->", f'<p class="error" role="alert">{message}</p>' if message else "")
-        html = html.replace("<!--actions-->", actions)
-        return HTMLResponse(html, headers={"Cache-Control": "no-cache", "Vary": "Cookie"})
+        html = html.replace("<!--actions-->", actions).replace("<!--account-->", account)
+        return HTMLResponse(html, status_code=status_code, headers={"Cache-Control": "no-cache", "Vary": "Cookie"})
+
+    def page_gate(request: Request) -> Response | None:
+        """登入才看得到的頁面：放行回 None，不然回要給他看的回應。router 故障時留在原網址說明，不當成登出。"""
+        if teacher_cookie.read(request) is not None:
+            return None
+        who = identify(request)
+        if isinstance(who, Identity):
+            return None
+        if isinstance(who, Refusal) and who.is_outage:
+            return home_page(UNAVAILABLE_REASON, "", status_code=503)
+        return back_home(request, who)
 
     @app.get("/index.html", include_in_schema=False)
     def old_home():
@@ -435,36 +474,12 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
     @app.get("/brief")
     def brief(request: Request):
         """委託頁：要登入（學生或老師）。Key Check 拒絕就清 cookie 回首頁；router 連不上時不清 cookie。"""
-        if teacher_cookie.read(request) is not None:
-            return FileResponse(PAGES / "brief.html", media_type="text/html",
-                                headers={"Cache-Control": "private, no-cache", "Vary": "Cookie"})
-        who = classroom_identity(request, router)
-        if who is None:
-            return go_home("login_required")
-        if isinstance(who, Refusal):
-            if who.reason == "unavailable":
-                return go_home("unavailable")
-            response = go_home("expired")
-            clear_classroom_cookie(response)
-            return response
-        return FileResponse(PAGES / "brief.html", media_type="text/html",
-                            headers={"Cache-Control": "private, no-cache", "Vary": "Cookie"})
+        return page_gate(request) or FileResponse(PAGES / "brief.html", media_type="text/html",
+                                                  headers={"Cache-Control": "private, no-cache", "Vary": "Cookie"})
 
     def signed_in(request: Request) -> Identity | TeacherSession:
         """下載要登入（學生或老師）：沒登入或金鑰失效回 401（失效時清 cookie），router 連不上回 503、不清 cookie。"""
-        session = teacher_cookie.read(request)
-        if session is not None:
-            return session
-        who = classroom_identity(request, router)
-        if who is None:
-            raise HTTPException(401, NOTICES["login_required"])
-        if isinstance(who, Refusal):
-            if who.reason == "unavailable":
-                raise HTTPException(503, who.message)
-            cleared = Response()
-            clear_classroom_cookie(cleared)
-            raise HTTPException(401, NOTICES["expired"], headers={"Set-Cookie": cleared.headers["set-cookie"]})
-        return who
+        return teacher_cookie.read(request) or require_student(request, identify(request))
 
     # 委託頁的下載：要登入
     @app.get(f"/downloads/{TRAINING_VIDEO}.mp4", dependencies=[Depends(signed_in)])
@@ -570,12 +585,30 @@ def create_app(data_dir: Path, load_detector: Callable[[Path], Detector], road_t
         store.set_class_final(klass.id, body.open)
         return class_view(klass)
 
-    app.mount("/", FrontEnd(directory=STATIC, html=True), name="static")
+    app.mount("/", FrontEnd(gate=page_gate, directory=STATIC, html=True), name="static")
     return app
 
 
 class FrontEnd(StaticFiles):
-    """前端檔案加 Cache-Control: no-cache：瀏覽器每次用 ETag 問一次有沒有新版（沒改是 304），部署後不會跑舊的 JS。"""
+    """前端檔案加 Cache-Control: no-cache：瀏覽器每次用 ETag 問一次有沒有新版（沒改是 304），部署後不會跑舊的 JS。
+
+    只有 PUBLIC_FILES 不用登入。用白名單比對正規化後的路徑，/submit、大小寫不同的寫法都算要登入。
+    """
+
+    def __init__(self, *, gate: Callable[[Request], Response | None], **options):
+        super().__init__(**options)
+        self._gate = gate
+
+    async def get_response(self, path: str, scope) -> Response:
+        response = await super().get_response(path, scope)  # 沒有這個檔案照樣 404
+        if path in PUBLIC_FILES:
+            return response
+        stopped = await run_in_threadpool(self._gate, Request(scope))  # Key Check 會等 router，不能卡住事件迴圈
+        if stopped is not None:
+            return stopped
+        response.headers["Cache-Control"] = "private, no-cache"
+        response.headers["Vary"] = "Cookie"
+        return response
 
     def file_response(self, *args, **kwargs):
         response = super().file_response(*args, **kwargs)

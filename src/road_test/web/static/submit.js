@@ -44,7 +44,7 @@ async function enter() {
     show("join");
     return;
   }
-  $("me").textContent = `${me.member.group_name}：${me.teammates.join("、")}`;
+  $("me").textContent = `${me.member.group_name}：${me.members.join("、")}`;
   show("work");
   showRoadTests(me);
   loadRecords();

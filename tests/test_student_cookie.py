@@ -82,7 +82,7 @@ def test_the_display_name_follows_the_router_and_identity_stays_the_student_id(o
     me = client.get("/api/student", headers=as_student(CLASSROOM_KEY)).json()
 
     assert me["member"]["display_name"] == "王小明"
-    assert me["teammates"] == ["王小明"], "同一個學生 id，只是名字變了，不會多一個組員"
+    assert me["members"] == ["王小明"], "同一個學生 id，只是名字變了，不會多一個組員"
     assert client.post("/api/student/group", json={"group_id": group},
                        headers=as_student(CLASSROOM_KEY)).status_code == 409
 
@@ -113,15 +113,15 @@ def test_the_group_card_lists_every_member_of_my_group_only(client) -> None:
     me = client.get("/api/student", headers=as_student(CLASSROOM_KEY)).json()
 
     assert me["member"]["group_name"] == "第 1 組"
-    assert sorted(me["teammates"]) == sorted(["小明", "小華"])
+    assert sorted(me["members"]) == sorted(["小明", "小華"])
     client.put("/api/teacher/classes/56/members/1235", json={"group_id": other}, headers=signed_in(TEACHER_KEY))
-    assert client.get("/api/student", headers=as_student(CLASSROOM_KEY)).json()["teammates"] == ["小明"]
+    assert client.get("/api/student", headers=as_student(CLASSROOM_KEY)).json()["members"] == ["小明"]
 
 
-def test_a_student_who_has_not_picked_a_group_has_no_teammates(client) -> None:
+def test_a_student_who_has_not_picked_a_group_has_no_members(client) -> None:
     add_group(client, 56, "第 1 組")
 
-    assert client.get("/api/student", headers=as_student(CLASSROOM_KEY)).json()["teammates"] == []
+    assert client.get("/api/student", headers=as_student(CLASSROOM_KEY)).json()["members"] == []
 
 
 def test_the_records_show_who_handed_in(client) -> None:
@@ -187,5 +187,6 @@ def test_no_page_or_answer_carries_the_key(client) -> None:
 
 @pytest.mark.parametrize("gone", ['id="api-key"', "換一把金鑰", 'id="display-name"', "貼上"])
 def test_the_hand_in_page_no_longer_asks_for_a_key_or_a_name(client, gone: str) -> None:
-    assert gone not in client.get("/submit.html").text
-    assert gone not in client.get("/submit.js").text
+    for path in ("/submit.html", "/submit.js"):
+        response = client.get(path, headers=as_student(CLASSROOM_KEY))
+        assert response.status_code == 200 and gone not in response.text

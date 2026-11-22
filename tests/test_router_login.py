@@ -7,7 +7,7 @@ import base64
 import json
 import logging
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote_plus, urlsplit
 
 import httpx
 import pytest
@@ -61,6 +61,28 @@ def test_the_code_is_exchanged_for_the_classroom_key_and_its_lifetime() -> None:
         "redirect_uri": "https://site.test/auth/callback"}
     expected = base64.b64encode(f"road-test:{SECRET}".encode()).decode()
     assert request.headers["Authorization"] == f"Basic {expected}", "client secret 放標頭，不放網址"
+
+
+@pytest.mark.parametrize("client_id, secret", [
+    ("road-test", "with+plus"), ("road-test", "100%25off"), ("road-test", "a:b c/d=é"), ("road+test:1", "plain"),
+])
+def test_client_credentials_survive_the_routers_decoding(client_id: str, secret: str) -> None:
+    """RFC 6749 §2.3.1：先表單編碼再放進 Basic；這裡照 router 的 oauth_use_case.py 解回來。"""
+    asked: list[httpx.Request] = []
+
+    def http(request: httpx.Request) -> httpx.Response:
+        asked.append(request)
+        return httpx.Response(200, json=sample("classroom-accepted"))
+
+    env = {**ENV, "VCR_OAUTH_CLIENT_ID": client_id, "VCR_OAUTH_CLIENT_SECRET": secret}
+    router = router_from_env(env, transport=httpx.MockTransport(http))
+
+    assert isinstance(router.exchange_student_code("the-code", "the-verifier"), ClassroomGrant)
+
+    scheme, _, encoded = asked[0].headers["Authorization"].partition(" ")
+    raw_id, raw_secret = base64.b64decode(encoded, validate=True).decode("utf-8").split(":", 1)
+    assert scheme == "Basic"
+    assert (unquote_plus(raw_id), unquote_plus(raw_secret)) == (client_id, secret)
 
 
 def test_a_code_the_router_refuses_is_a_failed_login() -> None:

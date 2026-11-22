@@ -1,5 +1,6 @@
 // 全站共用的標題列：右邊依 /api/me 顯示身分。名稱一律用 textContent 放進去，不當 HTML。
 // 沒登入時什麼都不放：首頁和標題列都沒有老師的入口（road-test ADR 0003）。
+// router 故障時 /api/me 帶 message：顯示原因，不要看起來像被登出。
 function siteHeaderText(text) {
   const span = document.createElement("span");
   span.textContent = text;
@@ -24,14 +25,14 @@ function siteHeaderLogout() {
   return form;
 }
 
-function renderSiteHeader(actions, me) {
+function renderSiteHeader(actions, me, onHome = false) {
   if (me.role !== "student" && me.role !== "teacher") {
-    actions.replaceChildren();
+    actions.replaceChildren(...(me.message ? [siteHeaderText(me.message)] : []));
     return;
   }
   const items = [siteHeaderText(me.display_name)];
   if (me.role === "student" && me.group_name) items.push(siteHeaderText(me.group_name));
-  if (me.role === "teacher") items.push(siteHeaderLink("委託", "/brief"), siteHeaderLink("後台", "/admin"));
+  if (me.role === "teacher") items.push(siteHeaderLink("委託", "/brief"), siteHeaderLink(onHome ? "進入後台" : "後台", "/admin"));
   actions.replaceChildren(...items, siteHeaderLogout());
 }
 
@@ -49,5 +50,5 @@ if (typeof module !== "undefined" && module.exports) {
 } else {
   const siteActions = document.getElementById("site-actions");
   // 問不到身分時標題列留空，頁面照常可用
-  if (siteActions) api("/api/me").then(me => renderSiteHeader(siteActions, me)).catch(() => {});
+  if (siteActions) api("/api/me").then(me => renderSiteHeader(siteActions, me, location.pathname === "/")).catch(() => {});
 }

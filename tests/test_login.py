@@ -243,7 +243,7 @@ def test_when_the_router_is_down_the_cookie_stays(site, fake) -> None:
 
     assert not set_cookie(page, "road_test_classroom") and not set_cookie(download, "road_test_classroom")
     assert download.status_code == 503
-    assert UNAVAILABLE_NOTICE in notice_after(site, page)
+    assert page.status_code == 503 and UNAVAILABLE_NOTICE in page.text, "留在原網址，重新整理就能再試"
 
 
 def test_a_key_that_stopped_working_cannot_download_and_is_cleared(site, fake) -> None:

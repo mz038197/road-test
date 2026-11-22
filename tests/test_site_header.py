@@ -75,10 +75,11 @@ def test_who_is_signed_in_is_never_cached_and_never_contains_the_key(site) -> No
     assert CLASSROOM_KEY not in response.text
 
 
-def test_when_the_router_is_down_the_header_is_empty_and_the_cookie_stays(site) -> None:
+def test_when_the_router_is_down_the_header_says_so_and_the_cookie_stays(site) -> None:
     response = site.get("/api/me", headers=as_student(DOWN_KEY))
 
-    assert response.status_code == 200 and response.json() == {"role": None}
+    assert response.status_code == 200
+    assert response.json() == {"role": None, "message": "驗證服務暫時無法使用，請稍後再試"}
     assert "set-cookie" not in response.headers
 
 

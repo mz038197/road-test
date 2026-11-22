@@ -20,15 +20,12 @@ from road_test.web.oauth import (CALLBACK_PATH, REFUSED, UNAVAILABLE_LOGIN, Clas
 from road_test.web.teacher_classes import ManagedClasses, TeacherClasses
 from road_test.web.teacher_classes import read_answer as read_classes
 
-# 假的 router 在本機開發時認得的兩把金鑰（不是真的金鑰，真的 router 不認得）
+# 假的 router 在本機開發時認得的金鑰（不是真的金鑰，真的 router 不認得）
 DEV_STUDENT_KEY = "vcr_sk_dev_student"
-DEV_TEACHER_KEY = "vcr_sk_dev_teacher"
 DEV_SITTING_SECONDS = 3 * 3600  # 假的 router 的一堂課
 _DEV_ANSWERS = {
     DEV_STUDENT_KEY: {"accepted": True, "kind": "classroom", "student_id": 1234, "class_id": 56,
                       "class_session_id": 789, "display_name": "本機學生"},
-    DEV_TEACHER_KEY: {"accepted": True, "kind": "personal", "user_id": 42, "display_name": "本機老師",
-                      "is_admin": False, "classes": [{"id": 56, "name": "本機班級"}]},
 }
 DEV_TEACHER = TeacherGrant(42, "本機老師")
 _DEV_TEACHERS = {42: {"accepted": True, "user_id": 42, "is_admin": False, "classes": [{"id": 56, "name": "本機班級"}]}}

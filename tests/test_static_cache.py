@@ -2,7 +2,7 @@
 import pytest
 
 
-@pytest.mark.parametrize("path", ["/", "/index.html", "/result.js", "/style.css"])
+@pytest.mark.parametrize("path", ["/", "/index.html", "/common.js", "/style.css"])
 def test_front_end_files_are_revalidated_after_deploys(client, path: str) -> None:
     r = client.get(path)
 
@@ -11,6 +11,6 @@ def test_front_end_files_are_revalidated_after_deploys(client, path: str) -> Non
 
 
 def test_unchanged_front_end_file_is_not_downloaded_again(client) -> None:
-    etag = client.get("/result.js").headers["etag"]
+    etag = client.get("/common.js").headers["etag"]
 
-    assert client.get("/result.js", headers={"If-None-Match": etag}).status_code == 304, "沒改過的檔案回 304，不用重下"
+    assert client.get("/common.js", headers={"If-None-Match": etag}).status_code == 304, "沒改過的檔案回 304，不用重下"
