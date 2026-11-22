@@ -1,0 +1,6 @@
+{
+  "id_token": "signed-by-the-test",
+  "token_type": "Bearer",
+  "expires_in": 300,
+  "scope": "openid teacher"
+}

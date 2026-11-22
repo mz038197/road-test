@@ -13,8 +13,9 @@ from fastapi.testclient import TestClient
 from road_test.detector import ModelRejected
 from road_test.web.app import RoadTest, create_app
 from road_test.web.key_check import KeyCheck
-from road_test.web.oauth import OAuthClient
-from road_test.web.router import RealRouter
+from road_test.web.oauth import OAuthClient, TeacherGrant
+from road_test.web.router import FakeRouter, RealRouter
+from road_test.web.teacher_classes import TeacherClasses
 
 CLASSES = ["car", "pedestrian", "bicyclist", "sign"]
 PED = [100, 100, 140, 200]
@@ -87,11 +88,28 @@ def router_answers() -> dict[str, dict]:
     }
 
 
+def teacher_contract(name: str) -> dict:
+    path = CONTRACTS.parent / "teacher-classes" / f"{name}.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+# 老師的 router user id（teacher-classes 的回答）
+TEACHER_ID, ADMIN_ID, NO_CLASS_ID = 42, 1, 77
+TEACHERS = {
+    TEACHER_ID: teacher_contract("accepted"),
+    ADMIN_ID: {**teacher_contract("accepted"), "user_id": ADMIN_ID, "is_admin": True, "classes": ALL_CLASSES},
+    NO_CLASS_ID: {**teacher_contract("accepted"), "user_id": NO_CLASS_ID, "classes": []},
+}
+
+
 def fake_router() -> RealRouter:
     """假的 router：只換掉 HTTP 那一層，網站自己的 Key Check 用戶端（快取、記錄、錯誤處理）照樣跑。"""
     answers = router_answers()
 
     def http(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/internal/teacher-classes":
+            answer = TEACHERS.get(json.loads(request.content)["user_id"])
+            return httpx.Response(200, json=answer or teacher_contract("refused"))
         key = json.loads(request.content)["api_key"]
         if key == DOWN_KEY:
             return httpx.Response(503)
@@ -100,11 +118,41 @@ def fake_router() -> RealRouter:
     transport = httpx.MockTransport(http)
     return RealRouter(KeyCheck("https://router.test", "road-test-credential", transport=transport),
                       OAuthClient("https://router.test", "road-test", "client-secret", "https://site.test",
-                                  transport=transport))
+                                  transport=transport),
+                      TeacherClasses("https://router.test", "road-test-credential", transport=transport))
 
 
 def bearer(key: str) -> dict:
     return {"Authorization": f"Bearer {key}"}
+
+
+# 測試站共用的老師 cookie 簽章密語；cookie 是走一次真的登入流程拿到的（見 teacher_cookies）
+TEACHER_COOKIE_SECRET = "teacher-cookie-secret-for-tests"
+TEACHER_USERS = {TEACHER_KEY: TEACHER_ID, ADMIN_KEY: ADMIN_ID, NO_CLASS_KEY: NO_CLASS_ID}
+_teacher_cookies: dict[int, str] = {}
+
+
+@pytest.fixture(scope="session", autouse=True)
+def teacher_cookies(tmp_path_factory):
+    """每位測試老師登入一次，留下 cookie。後面的測試帶它進後台，不用每次跑登入。"""
+    data = tmp_path_factory.mktemp("teacher-login")
+    (data / "answers").mkdir()
+    router = FakeRouter({})
+    app = create_app(data, load_detector=FakeDetector, workers=0, router=router,
+                     teacher_cookie_secret=TEACHER_COOKIE_SECRET,
+                     road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT)})
+    for user_id in TEACHER_USERS.values():
+        router.teacher_login_as = TeacherGrant(user_id, "測試老師")
+        with TestClient(app, base_url="https://testserver") as c:
+            c.get("/auth/teacher/login")
+            _teacher_cookies[user_id] = c.cookies["road_test_teacher"]
+
+
+def signed_in(key: str) -> dict:
+    """這個人的憑證：老師帶老師 cookie，學生帶課堂金鑰。"""
+    if key in TEACHER_USERS:
+        return {"Cookie": f"road_test_teacher={_teacher_cookies[TEACHER_USERS[key]]}"}
+    return bearer(key)
 
 
 @pytest.fixture
@@ -121,6 +169,7 @@ def open_site(data_dir: Path):
 
     def open_(**options) -> TestClient:
         options.setdefault("router", fake_router())
+        options.setdefault("teacher_cookie_secret", TEACHER_COOKIE_SECRET)
         app = create_app(data_dir, load_detector=FakeDetector,
                          road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT),
                                      "final": RoadTest("final", "Mini", FRAME_COUNT)}, workers=0, **options)
@@ -146,11 +195,11 @@ CLASS_ID = 56
 
 def seat(client: TestClient) -> None:
     """老師替 56 班建好 01、02、03 組，每個學生選進自己那組（已經建好就不再建）。"""
-    if client.get(f"/api/teacher/classes/{CLASS_ID}", headers=bearer(TEACHER_KEY)).json()["groups"]:
+    if client.get(f"/api/teacher/classes/{CLASS_ID}", headers=signed_in(TEACHER_KEY)).json()["groups"]:
         return
     for group, key in STUDENTS.items():
         gid = client.post(f"/api/teacher/classes/{CLASS_ID}/groups", json={"name": group},
-                          headers=bearer(TEACHER_KEY)).json()["id"]
+                          headers=signed_in(TEACHER_KEY)).json()["id"]
         joined = client.post("/api/student/group", json={"group_id": gid, "display_name": f"{group} 組的學生"},
                              headers=bearer(key))
         assert joined.status_code == 201, joined.text
@@ -190,5 +239,6 @@ def records(client: TestClient, group: str) -> list[dict]:
 def set_final(client: TestClient, is_open: bool):
     """老師開關 56 班的正式路考。"""
     seat(client)
-    return client.put(f"/api/teacher/classes/{CLASS_ID}/final", json={"open": is_open}, headers=bearer(TEACHER_KEY))
+    return client.put(f"/api/teacher/classes/{CLASS_ID}/final", json={"open": is_open},
+                      headers=signed_in(TEACHER_KEY))
 

@@ -8,6 +8,7 @@
   ROAD_TEST_ROUTER        real（預設）或 fake（本機開發用，正式環境拒絕啟動，見 router.py）
   VCR_OAUTH_CLIENT_ID、VCR_OAUTH_CLIENT_SECRET、ROAD_TEST_PUBLIC_URL  登入（見 oauth.py）
   ROAD_TEST_COOKIE_SECRET 登入 cookie 的簽章密語（Fly secret）
+  ROAD_TEST_TEACHER_COOKIE_SECRET  老師 cookie 的簽章密語（Fly secret，正式環境沒設就拒絕啟動）
 """
 import argparse
 import os
@@ -21,6 +22,7 @@ from road_test.detector import OnnxDetector
 from road_test.web import settings
 from road_test.web.app import RoadTest, create_app
 from road_test.web.idle import IdleExit
+from road_test.web.login import teacher_cookie_secret
 from road_test.web.router import router_from_env
 from road_test.web.signals import start_signal_forwarding
 
@@ -41,11 +43,13 @@ def frame_count(video) -> int:
 def build_app(config: settings.Settings | None = None):
     config = config or settings.from_env(os.environ, os.cpu_count())
     router = router_from_env(os.environ)  # 先選 router：正式環境設成假的 router 就在這裡停下來
+    teacher_secret = teacher_cookie_secret(os.environ)  # 正式環境沒設簽章密語也在這裡停下來
     road_tests = {kind: RoadTest(kind, seq, frame_count(paths.videos_dir() / f"{seq}.mp4"))
                   for kind, seq in SEQUENCES.items()}
     return create_app(paths.data_dir(), partial(OnnxDetector, threads=config.threads), road_tests,
                       workers=config.workers, max_upload_bytes=config.max_upload_bytes, router=router,
-                      cookie_secret=(os.environ.get("ROAD_TEST_COOKIE_SECRET") or "").strip() or None)
+                      cookie_secret=(os.environ.get("ROAD_TEST_COOKIE_SECRET") or "").strip() or None,
+                      teacher_cookie_secret=teacher_secret)
 
 
 def main(argv: list[str] | None = None) -> None:

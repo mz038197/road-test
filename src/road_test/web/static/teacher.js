@@ -1,60 +1,52 @@
-// 管理頁：老師用個人 API Key 登入，管理自己班級的組別（每組幾次正式路考）、組員、正式路考開關，
-// 看這個班級的路考紀錄（每筆是誰交的）並播放任一組的結果（road-test ADR 0001）。
-// 金鑰存在這個分頁的 sessionStorage（common.js 的 saveKey），api() 每個請求都帶 Authorization: Bearer。
-// 班級來自 router 的 Key Check（admin 是所有班級）；沒有可管理的班級時，伺服器回「你沒有可管理的班級」。
+// 後台：老師經 router 用 Google 登入（road-test ADR 0003），管理自己班級的組別（每組幾次正式路考）、組員、
+// 正式路考開關，看這個班級的路考紀錄（每筆是誰交的）並播放任一組的結果。
+// 身分在 HttpOnly 的老師 cookie 裡，這裡讀不到也不用帶。班級來自 router 的 teacher-classes（admin 是所有班級）。
 const $ = id => document.getElementById(id);
 let classId = null;
 let groups = [];
 let records = [];
+
+// 舊版管理頁可能在這個分頁留下個人金鑰：清掉，不再帶著它
+try { sessionStorage.removeItem("road-test-api-key"); } catch { /* 讀不到就沒有 */ }
 
 function say(text) {
   $("notice").textContent = text;
   $("error").textContent = "";
 }
 
+// 老師 cookie 到期（12 小時）時回 /admin，由它轉去重新登入
+async function backToLoginIfExpired() {
+  try {
+    if ((await fetch("/api/teacher/classes")).status === 401) location.assign("/admin");
+  } catch { /* 連不上就留在原頁，錯誤訊息已經顯示 */ }
+}
+
 function fail(e) {
   $("notice").textContent = "";
   $("error").textContent = e.message;
+  backToLoginIfExpired();
 }
 
 function send(path, body, method = "POST") {
   return api(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 }
 
-function showLogin(message) {
-  $("login").hidden = false;
-  $("admin").hidden = true;
-  $("login-error").textContent = message || "";
-}
-
-// 登入：拿得到班級才進老師畫面
-async function login() {
+// 進後台：拿得到班級才顯示管理畫面
+async function start() {
   let mine;
   try {
     mine = await api("/api/teacher/classes");
   } catch (e) {
-    saveKey("");
-    showLogin(e.message);
+    $("load-error").textContent = e.message;
+    backToLoginIfExpired();
     return;
   }
-  $("login").hidden = true;
   $("admin").hidden = false;
-  $("login-error").textContent = "";
   const select = $("class");
   select.innerHTML = mine.classes.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
   await openClass(Number(select.value)).catch(fail);
 }
 
-$("login").addEventListener("submit", event => {
-  event.preventDefault();
-  saveKey($("api-key").value.trim());
-  $("api-key").value = "";
-  login();
-});
-$("logout").addEventListener("click", () => {
-  saveKey("");
-  showLogin("");
-});
 $("class").addEventListener("change", () => openClass(Number($("class").value)).catch(fail));
 
 // 一個班級：正式路考開關、組別、組員、路考紀錄
@@ -113,7 +105,7 @@ $("members").addEventListener("click", async event => {
   } catch (e) { fail(e); }
 });
 
-// 路考紀錄：這個班級所有組，新的在前面；「播放」在同一個分頁打開結果頁（金鑰在這個分頁的 sessionStorage）
+// 路考紀錄：這個班級所有組，新的在前面；「播放」在同一個分頁打開結果頁（老師 cookie 一樣有效）
 function showRecords() {
   const group = $("filter").value;
   const rows = records.filter(r => !group || String(r.group_id) === group);
@@ -182,4 +174,4 @@ $("groups").addEventListener("click", async event => {
   } catch (e) { fail(e); }
 });
 
-if (loadKey()) login(); else showLogin("");
+start();

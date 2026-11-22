@@ -26,7 +26,7 @@ src/road_test/      Python 套件，網站和老師工具都從這裡 import
       brief.html    委託頁 /brief（要登入）：說明、計分規則、注意事項、下載訓練影片和訓練程式、在 Colab 開啟
     static/         前端：純 HTML、JS、CSS
       submit.html   學生貼課堂金鑰、選組、交件、看自己這組的路考紀錄
-      teacher.html  管理頁：老師貼個人金鑰管理自己班級的組別、組員、正式路考，看路考紀錄
+      teacher.js    後台（/admin，頁面在 pages/admin.html）：老師管理自己班級的組別、組員、正式路考，看路考紀錄
       playback.js   結果頁播放的計算（時間 ↔ 幀號、某一幀的判定、考官紀錄、分數），有 node 測試
       player.js     播放器：<video> 疊 canvas、播放控制、考官紀錄
 scripts/            老師一次性的腳本
@@ -69,14 +69,14 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 
 `ROAD_TEST_ROUTER`：`real`（預設）或 `fake`。本機開發設成 `fake` 就不用連 router，可以貼 `vcr_sk_dev_student`（56 班的學生）或 `vcr_sk_dev_teacher`（56 班的老師）。在 Fly 上設成 `fake` 時網站拒絕啟動。
 
-`VCR_OAUTH_CLIENT_ID`（預設 `road-test`）、`VCR_OAUTH_CLIENT_SECRET`、`ROAD_TEST_PUBLIC_URL`（預設 `https://lukao.vanscoding.com`，callback 是它加 `/auth/callback`，要跟 router 登記的一樣）：學生經 router 的 OAuth 登入。`ROAD_TEST_COOKIE_SECRET`：登入 cookie 的簽章密語。secret 都放 Fly secrets，不進 git。本機設 `ROAD_TEST_ROUTER=fake` 時按「登入」就直接登入成 56 班的學生。
+`VCR_OAUTH_CLIENT_ID`（預設 `road-test`）、`VCR_OAUTH_CLIENT_SECRET`、`ROAD_TEST_PUBLIC_URL`（預設 `https://lukao.vanscoding.com`，callback 是它加 `/auth/callback`，要跟 router 登記的一樣）：學生經 router 的 OAuth 登入。`ROAD_TEST_COOKIE_SECRET`：登入 cookie 的簽章密語。`ROAD_TEST_TEACHER_COOKIE_SECRET`：老師 cookie 的簽章密語，換掉它所有老師都要重新登入；**正式環境沒設定時網站拒絕啟動**，部署前要先 `fly secrets set`。secret 都放 Fly secrets，不進 git。本機設 `ROAD_TEST_ROUTER=fake` 時按「登入」就直接登入成 56 班的學生，開 `/admin` 就直接登入成 56 班的老師。
 
 `VANS_SIGNALS_URL`、`VANS_SIGNALS_TOKEN`：網站的 ERROR 記錄（交件偵測失敗、請求裡沒想到的錯）送到 vans-signals，Slack 上 Source 是 `road-test`（Fly 上放 secrets）。兩個都設定才送，本機不用設定。送的時候不等、約 2 秒逾時、不重送，送失敗不影響使用者。見 `docs/adr/0002-errors-go-to-vans-signals.md`。
 
-### 管理頁 `/teacher.html`
+### 後台 `/admin`
 
-老師貼上自己現有的個人 API Key 登入（不要重新產生，重新產生會讓 VS Code 裡的那把失效）。金鑰只存在這個分頁的 `sessionStorage`，每個請求帶 `Authorization: Bearer`，網站不存金鑰。
-看得到的班級是 router 的 Key Check 給的（admin 是所有班級）；沒有可管理的班級時顯示「你沒有可管理的班級」。課堂金鑰不能用管理頁。
+沒登入時直接轉到 router 的 Google 登入（`openid teacher`），回來後網站驗過 ID token，發一張自己簽章的老師 cookie，12 小時有效。舊的 `/teacher.html` 轉到這裡。
+看得到的班級是 router 的 teacher-classes 給的，留 60 秒（admin 是所有班級）；沒有可管理的班級時顯示「你沒有可管理的班級」。學生的登入不能用後台，老師的 cookie 不能交件。
 
 - **班級**：選要管理的班級（顯示班級名稱）。
 - **正式路考**：這個班級的開放／關閉，別的班級不受影響。開放期間這一班的模擬路考暫停收件，排隊中的正式路考先跑。
