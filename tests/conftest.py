@@ -145,7 +145,7 @@ def teacher_cookies(tmp_path_factory):
     (data / "answers").mkdir()
     router = FakeRouter({})
     app = create_app(data, load_detector=FakeDetector, workers=0, router=router,
-                     teacher_cookie_secret=TEACHER_COOKIE_SECRET,
+                     cookie_secret=TEACHER_COOKIE_SECRET,
                      road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT)})
     for user_id in TEACHER_USERS.values():
         router.teacher_login_as = TeacherGrant(user_id, "測試老師")
@@ -175,7 +175,7 @@ def open_site(data_dir: Path):
 
     def open_(**options) -> TestClient:
         options.setdefault("router", fake_router())
-        options.setdefault("teacher_cookie_secret", TEACHER_COOKIE_SECRET)
+        options.setdefault("cookie_secret", TEACHER_COOKIE_SECRET)
         app = create_app(data_dir, load_detector=FakeDetector,
                          road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT),
                                      "final": RoadTest("final", "Mini", FRAME_COUNT)}, workers=0, **options)

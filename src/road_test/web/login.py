@@ -31,8 +31,8 @@ MARKER_COOKIE = "road_test_signed_in"
 MARKER_EXTRA_SECONDS = 24 * 3600  # 標記比課堂金鑰多活多久：超過就當第一次來，看到「請先登入」
 TEACHER_COOKIE = "road_test_teacher"
 TEACHER_SECONDS = 12 * 3600
-TEACHER_SECRET_ENV = "ROAD_TEST_TEACHER_COOKIE_SECRET"
-COOKIE_SECRET_ENV = "ROAD_TEST_COOKIE_SECRET"
+# 唯一一把 cookie 簽章密語，老師 cookie 和登入途中的 cookie 各導出自己的簽章密鑰。名稱沿用舊的，改名要動 Fly secret
+COOKIE_SECRET_ENV = "ROAD_TEST_TEACHER_COOKIE_SECRET"
 ADMIN_PATH = "/admin"
 NOTICE_HEADER = "X-Login-Notice"  # 學生 API 回 401 時帶首頁提示條的代碼，前端照著導回首頁
 
@@ -57,14 +57,19 @@ def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-def _seal(secret: bytes, payload: dict) -> str:
+def _signing_key(secret: bytes, purpose: bytes) -> bytes:
+    """從 cookie 簽章密語導出某一種 cookie 專用的簽章密鑰，不同用途的 cookie 不能互換。"""
+    return hmac.new(secret, purpose, hashlib.sha256).digest()
+
+
+def _seal(key: bytes, payload: dict) -> str:
     body = _b64url(json.dumps(payload, separators=(",", ":")).encode())
-    return f"{body}.{hmac.new(secret, body.encode(), hashlib.sha256).hexdigest()}"
+    return f"{body}.{hmac.new(key, body.encode(), hashlib.sha256).hexdigest()}"
 
 
-def _open(secret: bytes, sealed: str) -> dict | None:
+def _open(key: bytes, sealed: str) -> dict | None:
     body, _, signature = sealed.partition(".")
-    expected = hmac.new(secret, body.encode(), hashlib.sha256).hexdigest()
+    expected = hmac.new(key, body.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(signature.encode(), expected.encode()):
         return None
     return json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
@@ -138,8 +143,7 @@ class TeacherCookie:
     """網站自己簽章的老師 cookie（ADR 0003）。換掉簽章密語，所有老師都要重新登入。"""
 
     def __init__(self, secret: bytes, clock: Callable[[], float]):
-        # 從密語導出專用的金鑰：就算跟登入途中那張 cookie 設成同一把密語，兩種 cookie 也不能互換
-        self._key = hmac.new(secret, b"road-test-teacher-cookie", hashlib.sha256).digest()
+        self._key = _signing_key(secret, b"road-test-teacher-cookie")
         self._clock = clock
 
     def issue(self, grant: TeacherGrant) -> str:
@@ -169,13 +173,14 @@ def _back_office_page(target: str) -> str:
 
 def login_routes(router: Router, clock: Callable[[], float], secret: bytes, teacher_cookie: TeacherCookie) -> APIRouter:
     routes = APIRouter()
+    login_key = _signing_key(secret, b"road-test-login-cookie")
 
     def start(kind: LoginKind, login_url: Callable[[str, str], str], **extra) -> Response:
         state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(48)
         challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
         response = RedirectResponse(login_url(state, challenge), status_code=303)
-        response.set_cookie(LOGIN_COOKIE, _seal(secret, {"state": state, "verifier": verifier, "kind": kind,
-                                                         "expires": int(clock()) + LOGIN_SECONDS, **extra}),
+        response.set_cookie(LOGIN_COOKIE, _seal(login_key, {"state": state, "verifier": verifier, "kind": kind,
+                                                            "expires": int(clock()) + LOGIN_SECONDS, **extra}),
                             max_age=LOGIN_SECONDS, path="/auth", **_COOKIE_FLAGS)
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -189,7 +194,7 @@ def login_routes(router: Router, clock: Callable[[], float], secret: bytes, teac
         return start(LoginKind.TEACHER, router.teacher_login_url, next=_back_office_page(next))
 
     def finish(request: Request, state: str, code: str, error: str) -> tuple[Response, ClassroomGrant | TeacherGrant | None]:
-        pending = _open(secret, request.cookies.get(LOGIN_COOKIE, ""))
+        pending = _open(login_key, request.cookies.get(LOGIN_COOKIE, ""))
         if (pending is None or pending.get("kind") not in tuple(LoginKind) or clock() > pending["expires"]
                 or not hmac.compare_digest(state.encode(), pending["state"].encode())):
             return go_home("login_failed"), None

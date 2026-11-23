@@ -43,7 +43,7 @@ def fake(data_dir) -> FakeRouter:
 
 def open_site(data_dir, fake, clock, secret: str = SECRET) -> TestClient:
     app = create_app(data_dir, load_detector=FakeDetector, workers=0, router=fake, clock=clock,
-                     teacher_cookie_secret=secret,
+                     cookie_secret=secret,
                      road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT),
                                  "final": RoadTest("final", "Mini", FRAME_COUNT)})
     return TestClient(app, base_url="https://testserver", follow_redirects=False)
@@ -135,6 +135,18 @@ def test_the_login_survives_a_restart_and_changing_the_secret_signs_everyone_out
         assert rotated.get("/api/teacher/classes", headers=header).status_code == 401
 
 
+def test_a_login_in_progress_survives_a_restart_with_the_one_secret(data_dir, fake, clock, site) -> None:
+    to_router = site.get("/auth/teacher/login")
+    pending = set_cookie(to_router, "road_test_login").split(";")[0]
+
+    with open_site(data_dir, fake, clock) as restarted:
+        back = urlsplit(to_router.headers["location"])
+        response = restarted.get(f"/auth/callback?{back.query}", headers={"Cookie": pending})
+
+    assert (response.status_code, response.headers["location"]) == (303, "/admin")
+    assert set_cookie(response, "road_test_teacher")
+
+
 def test_a_forged_teacher_cookie_is_refused(site) -> None:
     sign_in(site)
     value = site.cookies["road_test_teacher"]
@@ -147,7 +159,7 @@ def test_a_forged_teacher_cookie_is_refused(site) -> None:
 
 def test_a_login_cookie_cannot_be_used_as_a_teacher_cookie(data_dir, fake, clock) -> None:
     app = create_app(data_dir, load_detector=FakeDetector, workers=0, router=fake, clock=clock,
-                     cookie_secret=SECRET, teacher_cookie_secret=SECRET,
+                     cookie_secret=SECRET,
                      road_tests={"mock": RoadTest("mock", "Mini", FRAME_COUNT)})
     with TestClient(app, base_url="https://testserver", follow_redirects=False) as client:
         pending = set_cookie(client.get("/auth/teacher/login"), "road_test_login").split(";")[0].split("=", 1)[1]
@@ -156,6 +168,18 @@ def test_a_login_cookie_cannot_be_used_as_a_teacher_cookie(data_dir, fake, clock
         response = client.get("/api/teacher/classes", headers={"Cookie": f"road_test_teacher={pending}"})
 
     assert response.status_code == 401
+
+
+def test_a_teacher_cookie_cannot_finish_a_login(site) -> None:
+    sign_in(site)
+    teacher = site.cookies["road_test_teacher"]
+    back = urlsplit(site.get("/auth/teacher/login").headers["location"])
+    site.cookies.clear()
+
+    response = site.get(f"/auth/callback?{back.query}", headers={"Cookie": f"road_test_login={teacher}"})
+
+    assert parse_qs(urlsplit(response.headers["location"]).query)["notice"] == ["login_failed"]
+    assert not set_cookie(response, "road_test_teacher")
 
 
 def test_a_failed_teacher_login_returns_home_without_a_cookie(site, fake) -> None:
@@ -378,10 +402,14 @@ def test_a_personal_key_no_longer_opens_a_result(data_dir, fake, clock, site) ->
     assert site.get(f"/api/submissions/{sid}", headers=bearer(TEACHER_KEY)).status_code == 401
 
 
-def test_production_refuses_to_start_without_the_signing_secret(monkeypatch) -> None:
+@pytest.mark.parametrize("value", [None, "   "])
+def test_production_refuses_to_start_without_the_signing_secret(monkeypatch, value) -> None:
     monkeypatch.setenv("FLY_APP_NAME", "road-test")
     monkeypatch.setenv("ROAD_TEST_ROUTER", "real")
-    monkeypatch.setenv("ROAD_TEST_TEACHER_COOKIE_SECRET", "   ")
+    if value is None:
+        monkeypatch.delenv("ROAD_TEST_TEACHER_COOKIE_SECRET", raising=False)
+    else:
+        monkeypatch.setenv("ROAD_TEST_TEACHER_COOKIE_SECRET", value)
 
     with pytest.raises(SystemExit) as e:
         main.build_app(main.settings.from_env({}, 2))

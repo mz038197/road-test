@@ -69,7 +69,7 @@ uv run road-test-site --host 0.0.0.0 --port 8080
 
 `ROAD_TEST_ROUTER`：`real`（預設）或 `fake`。本機開發設成 `fake` 就不用連 router，按「登入」是 56 班的學生，開 `/admin` 是 56 班的老師。在 Fly 上設成 `fake` 時網站拒絕啟動。
 
-`VCR_OAUTH_CLIENT_ID`（預設 `road-test`）、`VCR_OAUTH_CLIENT_SECRET`、`ROAD_TEST_PUBLIC_URL`（預設 `https://lukao.vanscoding.com`，callback 是它加 `/auth/callback`，要跟 router 登記的一樣）：學生經 router 的 OAuth 登入。`ROAD_TEST_COOKIE_SECRET`：登入途中那張 cookie 的簽章密語，換掉它只影響正在登入的人。`ROAD_TEST_TEACHER_COOKIE_SECRET`：老師 cookie 的簽章密語，換掉它所有老師都要重新登入。**這兩個 cookie 密語在正式環境沒設定時網站都拒絕啟動**，部署前要先 `flyctl secrets set`。secret 都放 Fly secrets，不進 git。本機設 `ROAD_TEST_ROUTER=fake` 時按「登入」就直接登入成 56 班的學生，開 `/admin` 就直接登入成 56 班的老師。
+`VCR_OAUTH_CLIENT_ID`（預設 `road-test`）、`VCR_OAUTH_CLIENT_SECRET`、`ROAD_TEST_PUBLIC_URL`（預設 `https://lukao.vanscoding.com`，callback 是它加 `/auth/callback`，要跟 router 登記的一樣）：學生經 router 的 OAuth 登入。`ROAD_TEST_TEACHER_COOKIE_SECRET`：唯一一把 cookie 簽章密語，老師 cookie 和登入途中那張 cookie 各從它導出自己的簽章密鑰，換掉它所有老師都要重新登入，正在登入的人也要重按一次。**正式環境沒設定時網站拒絕啟動**，部署前要先 `flyctl secrets set`。secret 都放 Fly secrets，不進 git。本機設 `ROAD_TEST_ROUTER=fake` 時按「登入」就直接登入成 56 班的學生，開 `/admin` 就直接登入成 56 班的老師。
 
 `VANS_SIGNALS_URL`、`VANS_SIGNALS_TOKEN`：網站的 ERROR 記錄（交件偵測失敗、請求裡沒想到的錯）送到 vans-signals，Slack 上 Source 是 `road-test`（Fly 上放 secrets）。兩個都設定才送，本機不用設定。送的時候不等、約 2 秒逾時、不重送，送失敗不影響使用者。見 `docs/adr/0002-errors-go-to-vans-signals.md`。
 
@@ -147,7 +147,7 @@ uv run make-answers --camvid <CamVid資料夾> --out <答案.json>
 | 程式、前端、學生訓練程式 | Docker 映像（`Dockerfile`），只有 `pyproject.toml`、`uv.lock`、`src/`、`student/` |
 | 路考影片、答案、組別、交件、成績、路考紀錄 | volume `road_test_data`（5 GB，東京 nrt），掛在 `/data` = `ROAD_TEST_DATA`。重新部署不會不見 |
 | router 的 Key Check | Fly secrets `VCR_SERVICE_CREDENTIAL`（road-test 的 Service Credential，它的 SHA-256 加進 router 的 `VCR_SERVICE_TOKENS`，名稱 `road-test`）；`VCR_URL` 不設就是 `https://ai.vanscoding.com` |
-| 登入 | Fly secrets `VCR_OAUTH_CLIENT_SECRET`（router 登記的 client secret）、`ROAD_TEST_COOKIE_SECRET`、`ROAD_TEST_TEACHER_COOKIE_SECRET`（兩個 cookie 密語沒設定網站拒絕啟動，各用 `openssl rand -hex 32` 產生）；`VCR_OAUTH_CLIENT_ID`、`ROAD_TEST_PUBLIC_URL` 有預設值 |
+| 登入 | Fly secrets `VCR_OAUTH_CLIENT_SECRET`（router 登記的 client secret）、`ROAD_TEST_TEACHER_COOKIE_SECRET`（cookie 簽章密語，沒設定網站拒絕啟動，用 `openssl rand -hex 32` 產生）；`VCR_OAUTH_CLIENT_ID`、`ROAD_TEST_PUBLIC_URL` 有預設值 |
 | 錯誤送到 vans-signals | Fly secrets `VANS_SIGNALS_URL`、`VANS_SIGNALS_TOKEN`（road-test 自己的 token，它的 SHA-256 加進 vans-signals 的 `SIGNALS_TOKENS`，名稱 `road-test`） |
 | GitHub Actions 部署用的 token | repo secret `FLY_API_TOKEN`（`flyctl tokens create deploy -a road-test`） |
 
@@ -160,7 +160,8 @@ flyctl deploy                                  # 從本機手動部署（在 rep
 flyctl logs -a road-test                       # 看紀錄
 flyctl machine list -a road-test               # 機器開著還是停著
 flyctl secrets set VCR_SERVICE_CREDENTIAL=<openssl rand -hex 32 的結果> -a road-test   # 先把它的 SHA-256 加進 router 的 VCR_SERVICE_TOKENS、部署 router
-flyctl secrets set ROAD_TEST_COOKIE_SECRET=<openssl rand -hex 32 的結果> ROAD_TEST_TEACHER_COOKIE_SECRET=<另一個結果> -a road-test   # 沒設定網站拒絕啟動
+flyctl secrets set ROAD_TEST_TEACHER_COOKIE_SECRET=<openssl rand -hex 32 的結果> -a road-test   # 沒設定網站拒絕啟動
+flyctl secrets unset ROAD_TEST_COOKIE_SECRET -a road-test   # 舊的第二把密語，新版部署後移除
 flyctl ssh sftp shell -a road-test             # 上傳／下載 volume 上的檔案（put 本機檔 /data/...）
 flyctl ssh console -a road-test                # 進機器
 ```
