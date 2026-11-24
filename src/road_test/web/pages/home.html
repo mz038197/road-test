@@ -1,4 +1,6 @@
 <!doctype html>
+<!-- 首頁：上面一條寬銀幕的行車畫面（訓練影片 0016E5 一幀＋真的標註框），下面左標題、右登入，再下面三站路線。
+     整頁一屏放完（手機例外）。原型和其他三個版本在 prototype/home-variants 分支。 -->
 <html lang="zh-Hant-TW">
 <head>
   <meta charset="utf-8">
@@ -7,18 +9,43 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="home">
-<header class="site-header">
-  <a class="brand" href="/"><img src="/logo.svg" alt="" width="28" height="28"><span>路考網站</span></a>
-  <nav id="site-actions" aria-label="帳號"><!--account--></nav>
-</header>
 <main>
-  <!--notice-->
-  <header class="page-head">
-    <h1>路考網站</h1>
-    <p class="lead">幫自駕車訓練一雙眼睛。</p>
-    <p class="muted">用老師給的邀請碼登入，接下這份委託：標註、訓練模型，然後上路考。</p>
-  </header>
-  <!--actions-->
+  <section class="home-scene">
+    <header class="site-header">
+      <a class="brand" href="/"><img src="/logo.svg" alt="" width="28" height="28"><span>路考網站</span></a>
+      <nav id="site-actions" aria-label="帳號"><!--account--></nav>
+    </header>
+    <!--notice-->
+    <div class="home-frame">
+      <img src="/home-0016E5.webp" width="960" height="720"
+           alt="訓練影片 0016E5 的一幀：人行道上的行人、前方的自行車和貨車，右邊一台汽車，都框上了偵測框">
+      <div aria-hidden="true">
+        <div class="home-box" style="left:7.92%;top:39.17%;width:5.83%;height:27.5%"><span>行人 <b>.90</b></span></div>
+        <div class="home-box" style="left:14.58%;top:39.44%;width:6.88%;height:29.17%"></div>
+        <div class="home-box miss" style="left:25.63%;top:43.06%;width:3.75%;height:16.94%"><span>漏看 行人</span></div>
+        <div class="home-box" style="left:27.71%;top:42.22%;width:22.29%;height:23.06%"><span>汽車 <b>.88</b></span></div>
+        <div class="home-box bike" style="left:44.38%;top:46.94%;width:3.75%;height:18.06%"><span>自行車 <b>.71</b></span></div>
+        <div class="home-box bike" style="left:48.75%;top:43.89%;width:3.75%;height:21.67%"></div>
+        <div class="home-box" style="left:63.54%;top:49.44%;width:18.96%;height:21.11%"><span>汽車 <b>.93</b></span></div>
+      </div>
+    </div>
+    <p class="home-rec" aria-hidden="true">REC · 模擬路考</p>
+  </section>
+
+  <section class="home-copy">
+    <h1>幫自駕車<br>訓練一雙眼睛</h1>
+    <div class="home-login">
+      <!--actions-->
+    </div>
+  </section>
+
+  <section class="home-route" aria-label="路考怎麼進行">
+    <ol>
+      <li><h2>標註</h2><p>從訓練影片挑幀，框出汽車、行人、自行車和標誌。</p></li>
+      <li><h2>訓練</h2><p>用 Colab 訓練偵測模型，匯出 .onnx 交件。</p></li>
+      <li><h2>路考</h2><p>模型看一支沒看過的行車影片，考官逐秒扣分。模擬路考可以反覆考，正式路考才算成績。</p></li>
+    </ol>
+  </section>
 </main>
 <script src="common.js"></script>
 <script src="header.js"></script>

@@ -278,14 +278,118 @@ body.admin main { max-width: var(--page-admin); }
 .row select { width: auto; }
 td.actions button + button { margin-left: var(--s-8); }
 
-/* ---- 首頁：跟 club-booking-board 的首頁一樣是深色主視覺 ---- */
-body.home { color-scheme: dark; min-height: 100vh;
-  --surface: #09090B; --tile: #18181B; --hover: #27272A; --text: #FAFAFA; --muted: #A1A1AA; --line: #3F3F46;
-  --primary: #FAFAFA; --on-primary: #18181B; --secondary-ink: #D4D4D8; }
-body.home .site-header { background: var(--surface); }
-body.home main { padding-top: var(--page-end); }
-body.home h1 { font-size: var(--fs-48); }
-body.home a.button { padding: var(--s-12) var(--s-24); font-size: var(--fs-16); }
-body.home .error { background: #FEF2F2; border: var(--rule) solid #FECACA; color: #991B1B; border-radius: var(--radius-sm);
-  padding: var(--s-8) var(--s-12); font-size: var(--fs-14); margin-bottom: var(--s-24); }
-@media (max-width: 480px) { body.home h1 { font-size: var(--fs-32); } }
+/* ---- 首頁：上面寬銀幕的行車畫面，下面左標題、右登入，再下面三站路線；整頁一屏放完（手機例外）----
+   固定深色：照片本身是暗的，淺底接不起來。深色的值直接用上面 *-dark 那一份，舊瀏覽器也一樣 */
+body.home { color-scheme: dark;
+  --surface: var(--surface-dark); --tile: var(--tile-dark); --hover: var(--hover-dark); --text: var(--text-dark);
+  --muted: var(--muted-dark); --line: var(--line-dark); --primary: var(--primary-dark); --on-primary: var(--on-primary-dark);
+  --secondary-ink: var(--secondary-ink-dark); --danger-ink: var(--danger-ink-dark);
+  --warning-ink: var(--warning-ink-dark); --success-ink: var(--success-ink-dark);
+  /* 首頁自己的顏色：黃色是登入按鈕和路線，三種框色畫在照片上 */
+  --accent: #FACC15; --on-accent: #111827;
+  --box-car: #4ADE80; --box-bike: var(--accent); --box-miss: #F87171;
+  /* 首頁自己的尺寸（不在 4/8/12/16/24/32 級距裡，各有自己的變數） */
+  --fs-hero: clamp(36px, 5vw, 60px);                       /* 首頁大標題，跟著視窗寬度 */
+  --scene-height: clamp(200px, 40vh, 420px); --scene-height-sm: 36vh;  /* 行車畫面的高（寬螢幕、手機） */
+  --home-min-height: 560px;                                /* 視窗再矮就改成可以捲 */
+  --title-lift: 5vh;                                       /* 標題列比剩餘空間的正中間高一點 */
+  --notice-top: 64px;                                      /* 提示膠囊離畫面頂端：讓開標題列 */
+  --frame-cover: 133.34cqh;                                /* 4:3 照片蓋滿畫面高度要的寬 */
+  --frame-focus: .405;                                     /* 照片 54% 高的地方對準畫面中線：.54 × 3/4 */
+  --box-corner: 10px; --box-dot: 6px; --box-glow: 4px; --box-glow-strong: 10px; --frost: 6px;
+  --stop: 24px; --stop-ring: 4px; --dash: 24px; --dash-gap: 16px; }
+body.home main { max-width: none; padding: 0; display: flex; flex-direction: column;
+  height: 100vh; height: 100dvh; min-height: var(--home-min-height); }
+
+/* 行車畫面：照片像 cover 一樣蓋滿，以照片 54% 高的地方為中心（人和車都在那一帶）。
+   照片和框一起縮放，所以框用百分比就對得準 */
+.home-scene { position: relative; flex: none; height: var(--scene-height); overflow: hidden; container-type: size;
+  background: var(--stage); }
+.home-scene .site-header { position: absolute; inset: 0 0 auto; z-index: 2; border: 0;
+  background: linear-gradient(color-mix(in srgb, var(--surface) 70%, transparent), transparent); }
+.home-frame { --w: max(100cqw, var(--frame-cover)); position: absolute; width: var(--w); aspect-ratio: 4 / 3;
+  left: 50%; top: calc(50cqh - var(--w) * var(--frame-focus)); transform: translateX(-50%); }
+.home-frame img { display: block; width: 100%; height: 100%; }
+.home-scene::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(transparent 55%, var(--surface)),
+    linear-gradient(90deg, color-mix(in srgb, var(--surface) 35%, transparent), transparent 30%, transparent 70%,
+      color-mix(in srgb, var(--surface) 35%, transparent)); }
+/* 偵測框：四個角的括號＋很淡的細外框＋一點柔光；標籤是半透明膠囊，前面一顆類別色的點 */
+.home-box { --c: var(--box-car); position: absolute; border-radius: var(--radius-xs);
+  border: var(--rule) solid color-mix(in srgb, var(--c) 30%, transparent);
+  background:
+    linear-gradient(var(--c) 0 0) 0 0 / var(--box-corner) var(--rule-strong),
+    linear-gradient(var(--c) 0 0) 0 0 / var(--rule-strong) var(--box-corner),
+    linear-gradient(var(--c) 0 0) 100% 0 / var(--box-corner) var(--rule-strong),
+    linear-gradient(var(--c) 0 0) 100% 0 / var(--rule-strong) var(--box-corner),
+    linear-gradient(var(--c) 0 0) 0 100% / var(--box-corner) var(--rule-strong),
+    linear-gradient(var(--c) 0 0) 0 100% / var(--rule-strong) var(--box-corner),
+    linear-gradient(var(--c) 0 0) 100% 100% / var(--box-corner) var(--rule-strong),
+    linear-gradient(var(--c) 0 0) 100% 100% / var(--rule-strong) var(--box-corner),
+    color-mix(in srgb, var(--c) 6%, transparent);
+  background-repeat: no-repeat; filter: drop-shadow(0 0 var(--box-glow) color-mix(in srgb, var(--c) 55%, transparent)); }
+.home-box span { position: absolute; top: var(--s-4); left: var(--s-4); display: flex; align-items: center; gap: var(--s-4);
+  white-space: nowrap; font-size: var(--fs-12); font-weight: 500; line-height: 1; color: var(--text);
+  padding: var(--s-4) var(--s-8); border-radius: var(--pill); background: color-mix(in srgb, var(--stage) 70%, transparent);
+  backdrop-filter: blur(var(--frost)); box-shadow: inset 0 0 0 var(--rule) color-mix(in srgb, var(--text) 12%, transparent); }
+.home-box span::before { content: ""; width: var(--box-dot); height: var(--box-dot); border-radius: 50%; background: var(--c);
+  box-shadow: 0 0 var(--box-dot) var(--c); }
+.home-box b { font: 500 var(--fs-12)/1 var(--mono); color: var(--secondary-ink); }
+.home-box.bike { --c: var(--box-bike); }
+.home-box.miss { --c: var(--box-miss); border-style: dashed; animation: home-miss 1.6s ease-in-out infinite; }
+.home-box.miss span { top: auto; bottom: var(--s-4); }
+@keyframes home-miss { 50% { filter: drop-shadow(0 0 var(--box-glow-strong) var(--box-miss)); } }
+@media (prefers-reduced-motion: reduce) { .home-box.miss { animation: none; } }
+.home-rec { position: absolute; z-index: 1; right: var(--s-24); bottom: var(--s-24); margin: 0;
+  font: 500 var(--fs-12)/1 var(--mono); letter-spacing: .08em; color: var(--secondary-ink); }
+.home-rec::before { content: "● "; color: var(--danger-ink); }
+/* 課堂結束、故障的提示：膠囊浮在畫面上方正中間 */
+body.home .error { position: absolute; z-index: 3; top: var(--notice-top); left: 50%; transform: translateX(-50%);
+  margin: 0; max-width: calc(100% - var(--s-32)); padding: var(--s-8) var(--s-16); border-radius: var(--pill);
+  font-size: var(--fs-14); text-align: center; color: var(--danger-ink);
+  background: color-mix(in srgb, var(--surface) 80%, transparent); backdrop-filter: blur(var(--frost));
+  border: var(--rule) solid color-mix(in srgb, var(--danger) 50%, transparent); }
+
+/* 標題列＋三站路線一起放在行車畫面下方剩餘空間的正中間，標題列再往上挪一點 */
+.home-copy, .home-route ol { width: 100%; max-width: var(--page-steps); margin-left: auto; margin-right: auto;
+  padding: 0 var(--s-16); }
+.home-copy { position: relative; top: calc(var(--title-lift) * -1); margin-top: auto;
+  display: grid; grid-template-columns: 1.2fr 1fr; column-gap: var(--s-32); align-items: center; }
+body.home h1 { font-size: var(--fs-hero); line-height: 1.1; letter-spacing: -.03em; margin: 0; }
+.home-login { position: relative; }
+.home-login p { margin: 0; }
+body.home .home-login a.button { padding: var(--s-12) var(--s-24); font-size: var(--fs-16); font-weight: 700;
+  background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+/* 提示字掛在按鈕下面、不佔高度，跟標題對齊時只算按鈕本身 */
+.home-login .hint { position: absolute; top: 100%; left: 0; right: 0; margin-top: var(--s-12);
+  font-size: var(--fs-14); color: var(--muted); }
+.home-route { margin-bottom: auto; padding: var(--s-32) 0; }
+.home-route ol { list-style: none; margin-top: 0; margin-bottom: 0; display: grid; grid-template-columns: repeat(3, 1fr);
+  position: relative; }
+/* 虛線路線：從第一站的圓心畫到最後一欄的右邊 */
+.home-route ol::before { content: ""; position: absolute; top: calc((var(--stop) - var(--stop-ring)) / 2);
+  left: calc(var(--s-16) + var(--stop) / 2); right: var(--s-16); height: var(--stop-ring); border-radius: var(--stop-ring);
+  background: repeating-linear-gradient(90deg, var(--accent) 0 var(--dash), transparent var(--dash) calc(var(--dash) + var(--dash-gap)));
+  opacity: .6; }
+.home-route li { position: relative; margin: 0; padding: calc(var(--stop) + var(--s-12)) var(--s-24) 0 0; }
+.home-route li::before { content: ""; position: absolute; top: 0; left: 0; width: var(--stop); height: var(--stop);
+  border-radius: 50%; box-sizing: border-box; background: var(--surface); border: var(--stop-ring) solid var(--accent); }
+.home-route li:last-child::before { background: var(--accent); }
+.home-route h2 { font-size: var(--fs-16); margin: 0 0 var(--s-4); }
+.home-route p { margin: 0; color: var(--muted); font-size: var(--fs-14); line-height: 1.6; }
+
+/* 手機：三站直排，一屏放不下，改成可以捲；畫面固定高度 */
+@media (max-width: 720px) {
+  body.home main { height: auto; min-height: 100dvh; }
+  .home-scene { height: var(--scene-height-sm); }
+  .home-copy { top: 0; margin-top: var(--s-24); grid-template-columns: 1fr; row-gap: var(--s-16); }
+  .home-login .hint { position: static; }
+  .home-route { margin-bottom: 0; }
+  .home-route ol { grid-template-columns: 1fr; row-gap: var(--s-16); }
+  /* 直排時每一站往下接到下一站，最後一站下面不畫 */
+  .home-route ol::before { content: none; }
+  .home-route li { padding: 0 0 0 calc(var(--stop) + var(--s-16)); }
+  .home-route li:not(:last-child)::after { content: ""; position: absolute; left: calc((var(--stop) - var(--stop-ring)) / 2);
+    top: var(--stop); bottom: calc(var(--s-16) * -1); width: var(--stop-ring); background: var(--accent); opacity: .6; }
+  .home-box span { display: none; }
+}
