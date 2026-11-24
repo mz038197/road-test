@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import mimetypes
 import secrets
 import sqlite3
 import time
@@ -40,8 +41,11 @@ log = logging.getLogger(__name__)
 
 STATIC = Path(__file__).parent / "static"
 PAGES = Path(__file__).parent / "pages"  # 要由伺服器判斷登入的頁面（首頁、委託頁、後台）
-PUBLIC_FILES = frozenset({"style.css", "common.js", "header.js", "logo.svg"})  # 首頁要用的；其他前端檔案都要登入
-SIGNED_OUT_ACTIONS = '<p><a class="button" href="/auth/student/login">登入</a></p>'
+# 首頁要用的；其他前端檔案都要登入。home-0016E5.webp 是首頁的行車畫面：訓練影片 0016E5 第 7800 幀
+PUBLIC_FILES = frozenset({"style.css", "common.js", "header.js", "logo.svg", "home-0016E5.webp"})
+mimetypes.add_type("image/webp", ".webp")  # Windows 的登錄檔常常沒有 .webp，不加會送成 application/octet-stream
+SIGNED_OUT_ACTIONS = ('<p><a class="button" href="/auth/student/login">登入</a></p>'
+                      '<p class="hint">用老師給的邀請碼登入，再用暱稱或 Google 確認身分。</p>')
 STUDENT_ACTIONS = '<p><a class="button" href="/brief">進入路考</a></p>'
 TEACHER_ENTRY = '<a href="/admin">進入後台</a>'  # 首頁標題列右上角，只有老師 cookie 有效時才放進頁面
 KIND_NAMES = {"mock": "模擬路考", "final": "正式路考"}

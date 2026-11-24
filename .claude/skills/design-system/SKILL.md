@@ -102,4 +102,11 @@ When generating design-system guidance, use this structure:
   - 連結底線距離 3px
   - 焦點框位移 2px
   - 按鈕滑過時浮起 1px
+- 首頁（`body.home`）自己的值，都寫成變數放在 style.css 的首頁那一段：
+  - 固定深色，不跟系統換：照片本身是暗的，淺底接不起來。顏色直接用 `*-dark` 那一份。
+  - 黃色 `--accent: #FACC15`（登入按鈕、三站路線），上面放深色字 `--on-accent`。框色旁邊的「●」之類的字用 `--danger-ink`，不用框色。
+  - 照片上的框色 `--box-car`、`--box-bike`、`--box-miss`，只畫在照片上，不當文字顏色。
+  - 大標題 `--fs-hero`（36–60px，跟著視窗寬度）。
+  - 行車畫面高 `--scene-height`、`--scene-height-sm`；整頁最矮 `--home-min-height`；標題列上移 `--title-lift`；提示膠囊位置 `--notice-top`；照片裁切 `--frame-cover`、`--frame-focus`。
+  - 偵測框和路線的尺寸：`--box-corner`、`--box-dot`、`--box-glow`、`--box-glow-strong`、`--frost`、`--stop`、`--stop-ring`、`--dash`、`--dash-gap`。
 - 只給報讀軟體念的字（`.sr-only`）用固定的 1px、-1px 寫法，那不是間距，直接寫在 CSS 裡。

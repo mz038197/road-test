@@ -195,9 +195,16 @@ def test_signed_out_no_other_page_or_script_is_served(site, path: str) -> None:
     assert 'id="submit"' not in response.text
 
 
-@pytest.mark.parametrize("path", ["/style.css", "/common.js", "/header.js", "/logo.svg"])
+@pytest.mark.parametrize("path", ["/style.css", "/common.js", "/header.js", "/logo.svg", "/home-0016E5.webp"])
 def test_what_the_home_page_needs_stays_public(site, path: str) -> None:
     assert site.get(path).status_code == 200
+
+
+def test_the_home_page_road_frame_is_served_as_webp(site) -> None:
+    """Windows 的 mimetypes 不認得 .webp，會送成 application/octet-stream。"""
+    response = site.get("/home-0016E5.webp")
+
+    assert response.headers["content-type"] == "image/webp"
 
 
 def test_everything_the_home_page_links_to_loads_signed_out(site) -> None:
